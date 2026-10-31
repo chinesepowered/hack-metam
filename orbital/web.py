@@ -14,7 +14,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from orbital import sops
+from orbital import llm, sops
+from orbital.agents.events import EventLog
 from orbital.config import ROOT, RUNS_DIR
 from orbital.studies.analysis import compare_to_elevation
 from orbital.targets import WATER_TARGETS, data_dir
@@ -39,10 +40,12 @@ def sessions():
         ev = d / "events.jsonl"
         if not ev.exists():
             continue
-        first = json.loads(ev.open().readline() or "{}")
+        lines = ev.read_text().splitlines()
+        first, last = (json.loads(lines[i]) if lines else {} for i in (0, -1))
         state = d / "state.json"
         out.append({"id": d.name, "briefing": first.get("text", ""), "started": first.get("ts"),
-                    "done": state.exists() and "bulletin" in json.loads(state.read_text())})
+                    "done": state.exists() and "bulletin" in json.loads(state.read_text()),
+                    "stopped": last.get("kind") == "error" and last.get("actor") == "institute"})
     return out
 
 
@@ -135,9 +138,18 @@ def start(req: RunRequest):
 
     if any(t.is_alive() for t in _running.values()):
         raise HTTPException(409, "a cycle is already running")
+    if not llm.available("spark-open"):
+        raise HTTPException(400, "Set BASETEN_API_KEY where this server runs: every agent runs on Muse Spark Open "
+                                 "served by Baseten.")
     sid = time.strftime("%Y%m%d-%H%M%S")
-    t = threading.Thread(target=institute.run, kwargs={"briefing": req.briefing or institute.DEFAULT_BRIEFING,
-                                                       "run_id": sid}, daemon=True)
+
+    def cycle():
+        try:
+            institute.run(briefing=req.briefing or institute.DEFAULT_BRIEFING, run_id=sid)
+        except Exception as e:  # say why in the notebook, instead of a cycle that looks to be running forever
+            EventLog(SESSIONS / sid / "events.jsonl").emit("institute", "error", f"cycle stopped: {type(e).__name__}: {e}")
+
+    t = threading.Thread(target=cycle, daemon=True)
     t.start()
     _running[sid] = t
     return {"id": sid}

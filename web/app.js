@@ -318,7 +318,13 @@ function showWater(key) {
   $("study-title").textContent = study.name;
   activeKey = key || activeKey || study.versions[0]?.key;
   const v = study.versions.find((x) => x.key === activeKey);
-  if (!v) return;
+  if (!v) {  // nothing measured yet
+    $("tabs").innerHTML = "";
+    stats([]);
+    $("chart").innerHTML = `<p class="muted">Measurements appear here once the Water Lab has run.</p>`;
+    $("timelapse").classList.add("hidden");
+    return;
+  }
   versionTabs(study.versions, v.key, showWater);
   const pts = v.points, last = pts[pts.length - 1] || {};
   const r = v.grade?.pearson_r;
@@ -487,24 +493,44 @@ async function open(sid) {
   session = sid;
   reset();
   await loadStudy();
-  if (!sid) return;
+  if (!sid) return welcome();
   if (params.get("replay") === "manual") return manual();
   if (replay) return play();
   setStatus("live");
   poll();
 }
 
+function welcome() {
+  $("feed").innerHTML = `<div class="ev"><img class="av" src="/assets/capy-astronaut.svg" alt=""><div class="body">
+    <div class="card"><h4>No research cycles yet</h4>
+    Press <b>Run a new cycle</b> and the crew takes the standing briefing: how Lake Mead's surface has changed since
+    2018, checked against the official gauge, and the burn scar of this summer's Tartar Fire in Idaho. Every thought,
+    tool call, image and check appears here as it happens.
+    <p class="muted">The first cycle measures 106 months of Sentinel-2 imagery from scratch, so it takes a while;
+    later cycles reuse those measurements. Needs <code>BASETEN_API_KEY</code>; the SAM 2.1 cross-check needs
+    <code>uv sync --extra sam</code>.</p></div></div></div>`;
+}
+
 async function init() {
   renderCrew(null);
   const list = await (await fetch("/api/sessions")).json();
-  $("session").innerHTML = list.map((s) => `<option value="${s.id}">${s.id}${s.done ? "" : " (running)"}</option>`).join("");
+  $("session").innerHTML = list.map((s) => `<option value="${s.id}">${s.id}${s.done ? "" : s.stopped ? " (stopped)" : " (running)"}</option>`).join("");
+  $("session").classList.toggle("hidden", !list.length);
   session = session || list[0]?.id;
   if (session) $("session").value = session;
   $("session").onchange = (e) => open(e.target.value);
   $("run").onclick = async () => {
     $("run").disabled = true;
     const r = await fetch("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    if (!r.ok) {
+      const why = (await r.json().catch(() => ({}))).detail || `could not start a cycle (${r.status})`;
+      $("feed").insertAdjacentHTML("afterbegin", `<div class="ev"><img class="av" src="/assets/capy-astronaut.svg" alt="">
+        <div class="body"><div class="card"><h4>Not started</h4>${esc(why)}</div></div></div>`);
+      $("run").disabled = false;
+      return;
+    }
     const { id } = await r.json();
+    $("session").classList.remove("hidden");
     $("session").insertAdjacentHTML("afterbegin", `<option value="${id}">${id} (running)</option>`);
     $("session").value = id;
     open(id);
