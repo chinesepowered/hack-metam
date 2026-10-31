@@ -7,7 +7,7 @@ import shutil
 import warnings
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import asdict
+from dataclasses import asdict, fields
 from datetime import date
 from pathlib import Path
 from typing import Callable
@@ -66,7 +66,8 @@ def _parent(out_dir: Path, sop: WaterSOP):
     for d in out_dir.parent.glob("water-sop-*"):
         if d == out_dir or not (d / "sop.json").exists() or not (d / "series.json").exists():
             continue
-        old = WaterSOP(**json.loads((d / "sop.json").read_text()))
+        known = {f.name for f in fields(WaterSOP)}  # tolerate files written by older SOP definitions
+        old = WaterSOP(**{k: v for k, v in json.loads((d / "sop.json").read_text()).items() if k in known})
         if old.measure_params() == sop.measure_params():
             n = int(old.version.rsplit("-", 1)[1])
             if best is None or n > best[0]:
