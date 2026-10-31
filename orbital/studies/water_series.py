@@ -1,6 +1,7 @@
 """Measure a water body month by month; every data point keeps the image it came from."""
 from __future__ import annotations
 
+import fcntl
 import json
 import warnings
 from collections import defaultdict
@@ -64,6 +65,13 @@ def run_series(label: str, bbox, start: str, end: str, base_dir: Path, sop: Wate
                workers: int = 3, on_point: Callable[[dict], None] | None = None) -> list[dict]:
     out_dir = series_dir(base_dir, sop)
     out_dir.mkdir(parents=True, exist_ok=True)
+    # Labs run in parallel and may hit the same series: one writer at a time, across threads and processes.
+    with (out_dir / ".lock").open("w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        return _run_series_locked(label, bbox, start, end, out_dir, sop, workers, on_point)
+
+
+def _run_series_locked(label, bbox, start, end, out_dir: Path, sop: WaterSOP, workers, on_point) -> list[dict]:
     cache = out_dir / "series.json"
     done = {p["month"]: p for p in json.loads(cache.read_text())} if cache.exists() else {}
     months = monthly_candidates(bbox, start, end)

@@ -80,7 +80,7 @@ def lonlat_to_pixel(ds: xr.Dataset, lon: float, lat: float) -> tuple[int, int]:
     from pyproj import Transformer
 
     crs = ds.odc.crs if hasattr(ds, "odc") else None
-    epsg = int(str(crs).split(":")[-1]) if crs is not None else utm_epsg(lon, lat)
+    epsg = crs.epsg if crs is not None and crs.epsg else utm_epsg(lon, lat)
     x, y = Transformer.from_crs("EPSG:4326", f"EPSG:{epsg}", always_xy=True).transform(lon, lat)
     col = int(np.abs(ds.x.values - x).argmin())
     row = int(np.abs(ds.y.values - y).argmin())

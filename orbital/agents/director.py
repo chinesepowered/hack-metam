@@ -14,7 +14,15 @@ procedures (SOPs) consistent, and publish only findings that passed review. You 
 When a review shows a systematic measurement problem, fix the procedure (issue a new SOP) based on evidence,
 then send the study back so the lab re-measures under it. Be decisive and brief."""
 
-LABS = {"water": "Water Lab — lake and reservoir extent from Sentinel-2, graded against gauge records"}
+LABS = {
+    "water": "Water Lab — lake and reservoir extent from Sentinel-2, graded against gauge records",
+    "fire": "Fire Lab — wildfire burn scars and severity from Sentinel-2, graded against official perimeters",
+}
+
+
+def _fire_targets() -> list[str]:
+    from orbital.truth.fires import large_fires
+    return [f"{f['name']}, {f['state']}" for f in large_fires(100000) if f["contained"]]
 
 
 def _agent(log, provider, tools) -> Agent:
@@ -23,27 +31,35 @@ def _agent(log, provider, tools) -> Agent:
 
 def plan(log, provider: str, briefing: str) -> list[dict]:
     studies: list[dict] = []
+    fires = _fire_targets()
 
     def assign(a):
         if a["lab"] not in LABS:
             return {"error": f"unknown lab; labs: {list(LABS)}"}
         if a["lab"] == "water" and a["target"] not in WATER_TARGETS:
             return {"error": f"unknown target; water targets: {list(WATER_TARGETS)}"}
-        study = {"id": f"{a['lab']}-{len(studies) + 1}", **{k: a[k] for k in ("lab", "target", "question", "start", "end")}}
+        if a["lab"] == "fire" and a["target"] not in fires:
+            return {"error": f"unknown fire; use one of: {fires}"}
+        n = sum(s["lab"] == a["lab"] for s in studies) + 1
+        study = {"id": f"{a['lab']}-{n}", "lab": a["lab"], "target": a["target"], "question": a["question"],
+                 "start": a.get("start", ""), "end": a.get("end", "")}
         studies.append(study)
         log.emit("director", "assign", f"{study['id']} → {a['lab']} lab: {a['question']}", study=study)
         return {"assigned": study["id"]}
 
     tools = [
-        Tool("assign_study", "Assign a study to a lab.",
-             schema(lab={"type": "string", "enum": list(LABS)}, target={"type": "string"},
+        Tool("assign_study", "Assign a study to a lab. Water studies need start/end dates; fire studies do not.",
+             schema(required=["lab", "target", "question"],
+                    lab={"type": "string", "enum": list(LABS)},
+                    target={"type": "string", "description": "a water target id, or a fire as 'Name, ST'"},
                     question={"type": "string"}, start={"type": "string", "description": "YYYY-MM-DD"},
                     end={"type": "string", "description": "YYYY-MM-DD"}), assign),
         Tool("finish_planning", "Done assigning studies.", schema(note={"type": "string"}),
              lambda a: {"ok": True}, terminal=True),
     ]
     task = (f"Briefing: {briefing}\n\nLabs:\n" + "\n".join(f"- {k}: {v}" for k, v in LABS.items())
-            + f"\n\nWater targets: {json.dumps(WATER_TARGETS, indent=1)}\n\nAssign the studies, then finish_planning.")
+            + f"\n\nWater targets: {json.dumps(WATER_TARGETS, indent=1)}\nFire targets (this year's largest contained "
+            f"fires): {json.dumps(fires)}\n\nAssign one focused study per question, then finish_planning.")
     _agent(log, provider, tools).run(task)
     return studies
 
@@ -76,10 +92,10 @@ def decide(log, provider: str, packets: list[dict]) -> dict:
         return entry
 
     tools = [
-        Tool("methods_study", "Compare water-detection methods against the gauge; shows which SOP change each needs.",
-             schema(target={"type": "string"}), lambda a: water_lab.methods_study(a["target"])),
-        Tool("current_sop", "The lab's current SOP and every field you may change.",
-             schema(lab={"type": "string"}),
+        Tool("methods_study", "Water Lab only: compare water-detection methods against the gauge; shows which SOP "
+             "change reproduces each.", schema(target={"type": "string"}), lambda a: water_lab.methods_study(a["target"])),
+        Tool("current_sop", "A lab's current SOP and every field you may change.",
+             schema(lab={"type": "string", "enum": list(LABS)}),
              lambda a: {"current": sops.current(a["lab"]).__dict__, "fields": sops.FIELDS[a["lab"]],
                         "history": sops.history()}),
         Tool("issue_sop", "Issue a new SOP version for a lab; every later measurement by that lab follows it.",

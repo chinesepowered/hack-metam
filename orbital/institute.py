@@ -11,16 +11,17 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from orbital import llm, sops
-from orbital.agents import director, reviewer, water_lab
+from orbital.agents import director, fire_lab, reviewer, water_lab
 from orbital.agents.audit import audit_finding
 from orbital.agents.events import EventLog
 from orbital.agents.runtime import Agent
 from orbital.config import RUNS_DIR
 from orbital.targets import WATER_TARGETS
 
-DEFAULT_BRIEFING = ("Lake Mead's level is in the news again. Establish, from orbit, how much Lake Mead's "
-                    "surface has changed from 2018 to today, and whether our satellite measurements agree "
-                    "with the official gauge.")
+DEFAULT_BRIEFING = ("Two questions this cycle. (1) Lake Mead is in the news again: how much has its surface "
+                    "changed from 2018 to today, and do our satellite measurements agree with the official gauge? "
+                    "(2) Map the burn scar of this summer's Tartar Fire in Idaho and check it against the official "
+                    "perimeter.")
 
 
 def roles() -> dict[str, str]:
@@ -37,18 +38,29 @@ def lab_task(study: dict, revision: dict | None) -> str:
     text = (f"Study {study['id']}: {study['question']}\n"
             f"Target: {study['target']} ({t['name']}); period {study['start']} to {study['end']}; "
             f"current SOP: {sops.current('water').version}.\n"
-            "Workflow: 1) measure_water_series  2) compare_with_ground_truth  3) view_evidence for the latest "
-            "date, the minimum, and any outliers or points with warnings  4) submit_finding.")
-    if revision:
-        text += ("\n\nThis is a REVISION. Director's instructions: " + revision["instructions"]
-                 + "\nReviewer's issues with the previous version:\n- " + "\n- ".join(revision.get("issues", [])))
-    return text
+            "Workflow: 1) measure_water_series  2) compare_with_ground_truth (same start/end)  3) view_evidence "
+            "for the latest date, the minimum, and any outliers or points with warnings  4) submit_finding.")
+    return text + _revision_note(revision)
+
+
+def _revision_note(revision: dict | None) -> str:
+    if not revision:
+        return ""
+    return ("\n\nThis is a REVISION. Director's instructions: " + revision["instructions"]
+            + "\nReviewer's issues with the previous version:\n- " + "\n- ".join(revision.get("issues", [])))
 
 
 def run_lab(study: dict, log: EventLog, provider: str, revision: dict | None) -> tuple[dict, list[dict]]:
-    agent = Agent(f"{study['lab']}-lab", water_lab.SYSTEM, water_lab.make_tools(), log, provider)
-    log.emit(agent.name, "start", f"{study['id']}: {study['question']}", study=study)
-    finding = agent.run(lab_task(study, revision))
+    if study["lab"] == "water":
+        system, tools, task = water_lab.SYSTEM, water_lab.make_tools(), lab_task(study, revision)
+    else:
+        system, tools, task = fire_lab.SYSTEM, fire_lab.make_tools(), fire_lab.task(study) + _revision_note(revision)
+    agent = Agent(f"{study['lab']}-lab", system, tools, log, provider, tag=study["id"])
+    log.emit(agent.name, "start", f"{study['id']}: {study['question']}", study=study, tag=study["id"])
+    try:
+        finding = agent.run(task)
+    except Exception as e:  # one failing agent must not take the cycle down
+        finding = {"error": f"{type(e).__name__}: {e}"}
     if "error" not in finding:
         log.emit(agent.name, "finding", finding.get("headline", ""), study_id=study["id"],
                  finding={k: v for k, v in finding.items() if not k.startswith("_")})
@@ -56,9 +68,14 @@ def run_lab(study: dict, log: EventLog, provider: str, revision: dict | None) ->
 
 
 def run_review(study: dict, finding: dict, audit: list[dict], log: EventLog, provider: str) -> dict:
-    agent = reviewer.make_agent(log, provider)
-    log.emit("reviewer", "start", f"reviewing {study['id']}")
-    review = agent.run(reviewer.task_for(study, finding, audit))
+    agent = reviewer.make_agent(log, provider, study["lab"], tag=study["id"])
+    log.emit("reviewer", "start", f"reviewing {study['id']}", tag=study["id"])
+    try:
+        review = agent.run(reviewer.task_for(study, finding, audit))
+    except Exception as e:
+        review = {"error": f"{type(e).__name__}: {e}"}
+    if "error" in review:  # an unfinished review can never count as approval
+        review = {"verdict": "revise", "claim_checks": [], "issues": [f"review did not complete: {review['error']}"]}
     log.emit("reviewer", "review", f"{study['id']}: {review.get('verdict', 'error')}", study_id=study["id"],
              review={k: v for k, v in review.items() if not k.startswith("_")})
     return review

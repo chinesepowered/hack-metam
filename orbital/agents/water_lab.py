@@ -27,17 +27,20 @@ Rules:
 - Finish by calling submit_finding exactly once."""
 
 
-def _points(target: str) -> list[dict]:
+def _points(target: str, start: str | None = None, end: str | None = None) -> list[dict]:
+    """Series points under the current SOP, limited to [start, end] (by month) when given."""
     path = series_dir(data_dir(target), sops.current("water")) / "series.json"
-    return json.loads(path.read_text()) if path.exists() else []
+    pts = json.loads(path.read_text()) if path.exists() else []
+    lo, hi = (start or "0000-00")[:7], (end or "9999-99")[:7]
+    return [p for p in pts if lo <= p["month"] <= hi]
 
 
-def series_stats(target: str) -> dict:
-    pts = _points(target)
+def series_stats(target: str, start: str | None = None, end: str | None = None) -> dict:
+    pts = _points(target, start, end)
     good = usable_points(pts)
     sop = sops.current("water")
     if not good:
-        return {"target": target, "sop": sop.version, "months_measured": 0}
+        return {"target": target, "sop": sop.version, "period": [start, end], "months_measured": 0}
     areas = np.array([p["area_km2"] for p in good])
     years = np.array([(date.fromisoformat(p["date"]) - date(2000, 1, 1)).days / 365.25 for p in good])
     i_min, i_max = int(areas.argmin()), int(areas.argmax())
@@ -49,6 +52,7 @@ def series_stats(target: str) -> dict:
         "target": target,
         "name": WATER_TARGETS[target]["name"],
         "sop": sop.version,
+        "period": [good[0]["date"], good[-1]["date"]],
         "months_attempted": len(pts),
         "months_measured": len(good),
         "months_rejected": [{"month": p["month"], "why": [i for r in p.get("rejected_before", []) for i in r["issues"]]}
@@ -69,17 +73,18 @@ def series_stats(target: str) -> dict:
     }
 
 
-def ground_truth(target: str) -> dict:
+def ground_truth(target: str, start: str | None = None, end: str | None = None) -> dict:
     if target != "lake-mead":
         return {"error": f"no ground truth source wired for {target}"}
     truth = lake_mead_monthly()
-    grade = compare_to_elevation(_points(target), truth)
+    grade = compare_to_elevation(_points(target, start, end), truth)
     since_1940 = [(d, v) for d, v in truth if d.year >= 1940]
     low_d, low_v = min(since_1940, key=lambda x: x[1])
     prev_d, prev_v = min([(d, v) for d, v in since_1940 if d.year < low_d.year], key=lambda x: x[1])
     return {
         "source": WATER_TARGETS[target]["truth"],
         "sop": sops.current("water").version,
+        "period": [start, end],
         "agreement": {k: grade[k] for k in ("n", "pearson_r", "rmse_km2", "relative_rmse", "slope_km2_per_ft") if k in grade},
         "outliers_vs_gauge": grade.get("outliers", []),
         "gauge_latest": {"date": str(truth[-1][0]), "elevation_ft": truth[-1][1]},
@@ -154,7 +159,7 @@ def make_tools() -> list[Tool]:
             return {"error": f"unknown target; choose from {list(WATER_TARGETS)}"}
         t = WATER_TARGETS[target]
         run_series(t["name"], t["bbox"], args["start"], args["end"], data_dir(target), sop=sops.current("water"))
-        return series_stats(target)
+        return series_stats(target, args["start"], args["end"])
 
     return [
         Tool("list_targets", "Water bodies this lab can study, with areas of interest and ground-truth sources.",
@@ -165,8 +170,10 @@ def make_tools() -> list[Tool]:
              schema(target={"type": "string"}, start={"type": "string", "description": "YYYY-MM-DD"},
                     end={"type": "string", "description": "YYYY-MM-DD"}), measure),
         Tool("compare_with_ground_truth",
-             "Grade the measured series against official gauge records: correlation, scatter, outliers, record levels.",
-             schema(target={"type": "string"}), lambda a: ground_truth(a["target"])),
+             "Grade the measured series for a period against official gauge records: correlation, scatter, "
+             "outliers, record levels.",
+             schema(target={"type": "string"}, start={"type": "string"}, end={"type": "string"}),
+             lambda a: ground_truth(a["target"], a.get("start"), a.get("end"))),
         view_tool(),
         Tool("submit_finding", "Submit the study's finding to the Director. Ends your turn.",
              schema(required=["headline", "summary", "claims", "evidence_dates", "caveats", "confidence"],

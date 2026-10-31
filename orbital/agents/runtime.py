@@ -10,6 +10,21 @@ from orbital import llm
 from orbital.agents.events import EventLog
 
 MAX_TOOL_RESULT_CHARS = 14000
+MAX_IMAGES = 8  # per request on the Baseten deployment; older images give way to newer ones
+
+
+def _cap_images(messages: list[dict], limit: int = MAX_IMAGES) -> None:
+    """Keep only the most recent `limit` images in the conversation, replacing older ones with a note."""
+    seen = 0
+    for msg in reversed(messages):
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        for i in range(len(content) - 1, -1, -1):
+            if content[i].get("type") == "image_url":
+                seen += 1
+                if seen > limit:
+                    content[i] = {"type": "text", "text": "[older image removed to stay within the image limit]"}
 
 
 @dataclass
@@ -29,8 +44,10 @@ def schema(required: list[str] | None = None, **props) -> dict:
 
 
 class Agent:
-    def __init__(self, name: str, system: str, tools: list[Tool], log: EventLog, provider: str, max_steps: int = 14):
-        self.name, self.system, self.log, self.provider, self.max_steps = name, system, log, provider, max_steps
+    def __init__(self, name: str, system: str, tools: list[Tool], log: EventLog, provider: str,
+                 max_steps: int = 14, tag: str | None = None):
+        self.name, self.system, self.provider, self.max_steps = name, system, provider, max_steps
+        self.log = _Tagged(log, tag) if tag else log  # tag = study id, so parallel agents stay readable
         self.tools = {t.name: t for t in tools}
         self.results: list[dict] = []  # every tool output, for auditing the numbers the agent later claims
 
@@ -39,6 +56,7 @@ class Agent:
         messages = [{"role": "system", "content": self.system}, {"role": "user", "content": user}]
         specs = [t.spec() for t in self.tools.values()]
         for step in range(self.max_steps):
+            _cap_images(messages)
             reply = llm.chat(messages, tools=specs, provider=self.provider)
             if reply.reasoning:
                 self.log.emit(self.name, "thought", reply.reasoning.strip()[:600], model=llm.model_name(self.provider),
@@ -82,6 +100,20 @@ class Agent:
         return {"error": "max_steps"}
 
 
+class _Tagged:
+    def __init__(self, log: EventLog, tag: str):
+        self.log, self.tag = log, tag
+
+    def emit(self, actor: str, kind: str, text: str = "", **data) -> dict:
+        return self.log.emit(actor, kind, text, tag=self.tag, **data)
+
+
 def _compact(result: dict, limit: int = 1500) -> dict:
-    text = json.dumps(result, default=str)
-    return result if len(text) <= limit else {"summary": text[:limit] + "…"}
+    """Keep small fields as-is for the event log; elide big ones (point lists) to their size."""
+    if len(json.dumps(result, default=str)) <= limit:
+        return result
+    out = {}
+    for k, v in result.items():
+        size = len(json.dumps(v, default=str))
+        out[k] = v if size <= 400 else f"<{size} chars>"
+    return out
