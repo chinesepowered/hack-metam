@@ -32,6 +32,10 @@ def facts(session: str) -> dict:
     state = json.loads((RUNS_DIR / "sessions" / session / "state.json").read_text())
     water = session_sops(state, "water")
     fire = session_sops(state, "fire")
+    events = [json.loads(x) for x in (RUNS_DIR / "sessions" / session / "events.jsonl").read_text().splitlines() if x]
+    watched = next((e["result"].get("frames_watched") for e in events
+                    if e["kind"] == "tool_result" and e.get("text") == "watch_timelapse" and e["actor"] == "reviewer"
+                    and isinstance(e.get("result"), dict) and e["result"].get("frames_watched")), None)
     truth = lake_mead_monthly()
     grade = lambda sop: compare_to_elevation(  # noqa: E731
         json.loads((series_dir(data_dir("lake-mead"), sop) / "series.json").read_text()), truth)
@@ -48,7 +52,7 @@ def facts(session: str) -> dict:
         "iou1": f"{f1.get('iou', 0):.2f}", "iou2": f"{f2.get('iou', 0):.2f}",
         "prec2": f"{f2.get('precision', 0) * 100:.0f}", "outside1": f"{f1.get('burned_outside_perimeter_km2', 0):.0f}",
         "acres": f"{official:,}", "published": len(state.get("published", [])),
-        "caught": len(state.get("ledger", [])), "sops": [s.key() for s in water + fire],
+        "caught": len(state.get("ledger", [])), "sops": [s.key() for s in water + fire], "watched": watched,
     }
 
 
@@ -74,10 +78,13 @@ def scenes(session: str) -> list[dict]:
                  "Tartar Fire in Idaho? The labs combed through 106 months of satellite images of the lake and mapped "
                  "the fire, and every number traced back to a tool."},
         {"id": "reject", "visual": "replay:r1_decide",
-         "text": f"But the Reviewer checked the satellite evidence and sent both studies back. In winter the lake "
-                 f"looked almost black, so our water index missed most of it. Agreement with the gauge was just "
-                 f"{f['r1']}. And the fire map counted {f['outside1']} square kilometers outside the official "
-                 f"perimeter as burned: farm fields, and hillsides across the river."},
+         "text": (f"But the Reviewer watched all {f['watched']} months of the lake as a time-lapse, using Muse Spark "
+                  f"Open's video understanding, and flagged the months where the lake turned black and our water "
+                  f"index missed it. " if f.get("watched") else
+                  "But the Reviewer checked the satellite evidence. In winter the lake looked almost black, so our "
+                  "water index missed most of it. ")
+                 + f"Agreement with the gauge was just {f['r1']}. And the fire map counted {f['outside1']} square "
+                   f"kilometers outside the official perimeter as burned. Both studies went back."},
     ]
     if rounds != 2 or len(fire_sops) != 1:
         raise SystemExit(f"narration is written for a 2-round cycle with one fire fix; {session} had {rounds} rounds "

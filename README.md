@@ -30,9 +30,10 @@ repository was written during the hackathon; the repository started empty (see t
    - **Fire Lab** — burn scar and severity from the change in Normalized Burn Ratio between clear pre- and
      post-fire scenes, graded against the official NIFC fire perimeter.
 3. **Auditor** (plain code, no model) checks that every value a lab claims appears in that lab's own tool outputs.
-4. **Reviewer** verifies each claim, looks at the satellite evidence, re-measures key numbers from raw imagery,
-   and applies the institute's publication standards (e.g. lake area must track the gauge at r ≥ 0.8; a burn map
-   must overlap the perimeter at IoU ≥ 0.75).
+4. **Reviewer** verifies each claim, *watches* the whole measured series as a satellite time-lapse (video
+   understanding), inspects every flagged frame, re-measures key numbers from raw imagery, and applies the
+   institute's publication standards (e.g. lake area must track the gauge at r ≥ 0.8; a burn map must overlap the
+   perimeter at IoU ≥ 0.75).
 5. **Director** rules: publish, or fix the procedure from evidence (a methods study, a versioned SOP that every lab
    follows) and send the study back.
 6. A **bulletin** is published with the findings and an error ledger of what the institute caught in its own work.
@@ -70,11 +71,17 @@ A static, key-free replay of cycle-5: [hack-metam-static](https://github.com/chi
 
 | Role | Model | How it is used |
 |---|---|---|
-| Director, labs, reviewer | **Muse Spark Open** (`meta-models/muse-spark-open-1026`, open weights, served by Baseten) | Tool calling, multi-step agent loops, vision over satellite evidence images, reasoning |
+| Director, labs, reviewer | **Muse Spark Open** (`meta-models/muse-spark-open-1026`, open weights, served by Baseten) | Tool calling, multi-step agent loops, vision over satellite evidence images, **video understanding** (skimming 8 years of monthly time-lapse in parallel clips to find the months an instrument got wrong), reasoning |
 | Director / reviewer, optional | Muse Wonder / Muse Spark 1.3 (Meta Model API) | Opt in with `ORBITAL_META_ROLES=1` and `MODEL_API_KEY` (see `orbital.institute.roles()`) |
 
 Structured results come back through tool calls rather than `response_format=json_schema`, which degenerates into
 whitespace on the Baseten deployment. Evidence images are capped at 8 per request, the deployment's limit.
+
+**Video review, measured.** `watch_timelapse` turns the measured series into clips of 24 months at 2 s per frame
+(the model samples about one frame per second) and reviews them in parallel. On the flawed SOP v1 series (73
+months) it flagged all three dark-water failures with exact dates (2020-10-22, 2021-01-30, 2025-02-18) plus seven
+narrow-channel gaps in ~27 s; on the gated SOP v2 series it flagged nothing. Flags are matched to real data points by
+date and printed area, and the Reviewer confirms each one with `view_evidence`.
 
 ## Run it
 
