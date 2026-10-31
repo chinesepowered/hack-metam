@@ -34,9 +34,10 @@ class WaterSOP:
     dark_water_rule: bool = False
     dark_reflectance: float = 0.015
     # Scene quality gates (off by default): reject a scene when too much of the lake is near-black, or when the
-    # independent methods disagree by more than this share of the area; the month then falls back to its next date.
+    # primary water outline overlaps ESA's own water classification too little; the month falls back to its next
+    # clear date. (Overlap, not area spread: ESA's class always includes shoreline pixels, a constant offset.)
     max_dark_share: float = 1.0
-    max_method_spread: float = 10.0
+    min_method_iou: float = 0.0
 
     def key(self) -> str:
         """Version plus a hash of the parameters: caches only match when the procedure is identical.
@@ -51,15 +52,18 @@ class WaterSOP:
 
     def passes(self, point: dict) -> bool:
         """Would a measurement made under another SOP with the same measure_params pass this SOP's gates?"""
-        spread = (point["band_km2"][1] - point["band_km2"][0]) / max(point["area_km2"], 1e-6)
         return (point.get("cloud_near_water", 1.0) <= self.max_cloud_near_water
                 and point.get("nodata_fraction", 1.0) <= self.max_nodata
                 and point.get("dark_share", 0.0) <= self.max_dark_share
-                and spread <= self.max_method_spread)
+                and point.get("agreement_iou", {}).get("esa_scl", 1.0) >= self.min_method_iou)
+
+    def at_least_as_strict_as(self, other: "WaterSOP") -> bool:
+        return all(getattr(self, g) <= getattr(other, g) if GATE_FIELDS[g] == "max" else getattr(self, g) >= getattr(other, g)
+                   for g in GATE_FIELDS)
 
 
-OPTIONAL_GATES = {"max_dark_share": 1.0, "max_method_spread": 10.0}
-GATE_FIELDS = {"max_cloud_near_water", "max_nodata", *OPTIONAL_GATES}
+OPTIONAL_GATES = {"max_dark_share": 1.0, "min_method_iou": 0.0}
+GATE_FIELDS = {"max_cloud_near_water": "max", "max_nodata": "max", "max_dark_share": "max", "min_method_iou": "min"}
 
 
 SOP_FIELDS = {
@@ -71,8 +75,8 @@ SOP_FIELDS = {
     "dark_reflectance": "reflectance under which a pixel counts as near-black for the dark-water rule (default 0.015)",
     "max_dark_share": "reject a scene when more than this share of ESA-classified water is near-black; the month "
                       "falls back to its next clear date (default 1.0 = off)",
-    "max_method_spread": "reject a scene when the methods' range exceeds this share of the measured area; the month "
-                         "falls back to its next clear date (default 10.0 = off)",
+    "min_method_iou": "reject a scene when the water outline's overlap (IoU) with ESA's water classification is below "
+                      "this; the month falls back to its next clear date (default 0.0 = off)",
 }
 
 
@@ -170,11 +174,9 @@ def measure_water(ds: xr.Dataset, sop: WaterSOP = WaterSOP()) -> WaterMeasuremen
                         "(possible atmospheric over-correction); MNDWI is unreliable there")
     if dark_share > sop.max_dark_share:
         issues.append(f"{dark_share:.0%} of the lake is near-black (gate {sop.max_dark_share:.0%})")
-    areas = [float(v.sum() * km2) for v in masks.values()]
-    primary_km2 = float(primary.sum() * km2)
-    spread = (max(areas) - min(areas)) / max(primary_km2, 1e-6)
-    if spread > sop.max_method_spread:
-        issues.append(f"methods disagree by {spread:.0%} of the area (gate {sop.max_method_spread:.0%})")
+    esa_iou = iou(primary, masks["esa_scl"])
+    if esa_iou < sop.min_method_iou:
+        issues.append(f"water outline overlaps ESA's classification at IoU {esa_iou:.2f} (gate {sop.min_method_iou:.2f})")
 
     return WaterMeasurement(
         date=ds.attrs["date"],

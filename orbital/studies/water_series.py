@@ -19,7 +19,7 @@ from skimage.transform import resize
 from orbital.imagery import render
 from orbital.imagery.load import load_day
 from orbital.imagery.stac import group_by_day, search_scenes, tile_cloud_cover
-from orbital.instruments.water import GATE_FIELDS, WaterSOP, measure_water
+from orbital.instruments.water import WaterSOP, measure_water
 
 warnings.filterwarnings("ignore", module="rasterio")
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -121,7 +121,7 @@ def _run_series_locked(label, bbox, start, end, out_dir: Path, sop: WaterSOP, wo
     parent = _parent(out_dir, sop)
     if parent:
         src, old = parent
-        stricter = all(getattr(sop, g) <= getattr(old, g) for g in GATE_FIELDS)
+        stricter = sop.at_least_as_strict_as(old)
         prior = {p["month"]: p for p in json.loads((src / "series.json").read_text())}
         for key in list(todo):
             pp = prior.get(f"{key[0]}-{key[1]:02d}")

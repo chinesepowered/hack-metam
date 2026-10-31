@@ -115,7 +115,8 @@ METHOD_TO_SOP = {
 
 
 def methods_study(target: str) -> dict:
-    """Which water-detection variant tracks the gauge best (precomputed by scripts/water_methods_eval.py)."""
+    """Which water-detection variant tracks the gauge best (precomputed by scripts/water_methods_eval.py),
+    plus what each scene quality gate would cost in months and gain in agreement."""
     path = data_dir(target) / "methods_eval.json"
     if not path.exists():
         return {"error": "no methods study on file; run scripts/water_methods_eval.py"}
@@ -126,8 +127,34 @@ def methods_study(target: str) -> dict:
         "score": "Pearson r between measured area and USBR gauge elevation (higher is better); "
                  "scatter = RMSE around a quadratic area–elevation fit",
         "variants": [{"method": k, **v, "sop_changes": METHOD_TO_SOP.get(k)} for k, v in ranked],
+        "quality_gates": gate_options(target),
         "note": "sop_changes = the SOP field values that reproduce the method; null means the SOP cannot express it",
     }
+
+
+def gate_options(target: str) -> dict | list:
+    """Replay quality gates over the cached dark-water series: months kept vs agreement with the gauge.
+    (A real re-run falls back to other dates in rejected months, so it keeps at least this many.)"""
+    base = {"dark_water_rule": True, "dark_reflectance": 0.025}
+    series = None
+    for d in sorted(data_dir(target).glob("water-sop-*")):
+        sop = json.loads((d / "sop.json").read_text()) if (d / "sop.json").exists() else {}
+        if all(sop.get(k) == v for k, v in base.items()) and sop.get("max_dark_share", 1.0) == 1.0 \
+                and sop.get("min_method_iou", 0.0) == 0.0 and (d / "series.json").exists():
+            series = usable_points(json.loads((d / "series.json").read_text()))
+    if not series or target != "lake-mead":
+        return {"note": "no cached dark-water series to replay gates on"}
+    truth = lake_mead_monthly()
+    rows = []
+    for max_dark in (1.0, 0.5, 0.3):
+        for min_iou in (0.0, 0.75, 0.8):
+            keep = [p for p in series if p.get("dark_share", 0) <= max_dark
+                    and p.get("agreement_iou", {}).get("esa_scl", 1) >= min_iou]
+            g = compare_to_elevation(keep, truth)
+            if "pearson_r" in g:
+                rows.append({"sop_changes": base | {"max_dark_share": max_dark, "min_method_iou": min_iou},
+                             "months_kept": g["n"], "pearson_r": g["pearson_r"], "rmse_km2": g["rmse_km2"]})
+    return sorted(rows, key=lambda r: (-r["pearson_r"], -r["months_kept"]))
 
 
 def evidence_paths(target: str, dates: list[str]):

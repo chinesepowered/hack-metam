@@ -38,7 +38,13 @@ def search_scenes(bbox, start: str, end: str, max_cloud: float = 20.0) -> list[p
 
     with ThreadPoolExecutor(max_workers=min(4, len(spans))) as pool:
         items = [it for chunk in pool.map(one, spans) for it in chunk]
-    return _latest_processing(items)
+    return _latest_processing([it for it in items if _public_cog(it)])
+
+
+def _public_cog(item: pystac.Item) -> bool:
+    """A few older items point at the requester-pays JP2 archive (HTTP 403 without billing); keep public COGs."""
+    red = item.assets.get("red")
+    return red is not None and "sentinel-cogs" in red.href
 
 
 def _latest_processing(items: list[pystac.Item]) -> list[pystac.Item]:

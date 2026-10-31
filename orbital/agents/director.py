@@ -126,7 +126,8 @@ def decide(log, provider: str, packets: list[dict]) -> dict:
             "Labs always measure with their lab's current SOP and cannot change it themselves. If a review points "
             "to a measurement problem, use current_sop and the lab's methods study (water_methods_study or "
             "fire_methods_study), issue an evidence-based SOP change for that lab, then send the study back to be "
-            "re-measured under it. If a review asks for quality gates the SOP offers, set those fields.\n\n"
+            "re-measured under it. If a review asks for quality gates the SOP offers, set those fields. Among "
+            "procedures that meet the publication standard, prefer the one that keeps the most data.\n\n"
             + json.dumps(brief, indent=1, default=str))
     _agent(log, provider, tools).run(task)
     return out

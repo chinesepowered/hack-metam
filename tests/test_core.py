@@ -40,6 +40,17 @@ def test_sop_key_changes_with_parameters_not_just_version():
     assert a.key().startswith("water-sop-2-")
 
 
+def test_gates_know_their_direction():
+    base = WaterSOP(dark_water_rule=True, dark_reflectance=0.025)
+    gated = WaterSOP(dark_water_rule=True, dark_reflectance=0.025, max_dark_share=0.5, min_method_iou=0.8)
+    assert gated.at_least_as_strict_as(base) and not base.at_least_as_strict_as(gated)
+    assert base.key().endswith(WaterSOP(dark_water_rule=True, dark_reflectance=0.025).key()[-6:])
+    point = {"cloud_near_water": 0.0, "nodata_fraction": 0.0, "dark_share": 0.2, "agreement_iou": {"esa_scl": 0.79},
+             "band_km2": [250, 320], "area_km2": 260}
+    assert base.passes(point) and not gated.passes(point)  # IoU 0.79 < 0.8
+    assert gated.measure_params() == base.measure_params()  # gates don't change what a scene measures
+
+
 def test_image_cap_keeps_most_recent_images():
     img = {"type": "image_url", "image_url": {"url": "data:"}}
     messages = [{"role": "user", "content": [dict(img) for _ in range(5)]} for _ in range(3)]
