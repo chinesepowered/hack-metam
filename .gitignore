@@ -1,0 +1,14 @@
+# secrets — never commit keys
+.env
+*.env
+keys*
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# data + outputs (regenerable)
+.cache/
+runs/
+# node
+node_modules/
