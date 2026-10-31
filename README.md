@@ -39,43 +39,47 @@ repository was written during the hackathon; the repository started empty (see t
    follows) and send the study back.
 6. A **bulletin** is published with the findings and an error ledger of what the institute caught in its own work.
 
-## Results (cycle-7, a full autonomous run; the one in the demo video)
+## Results (cycle-8, a full autonomous run; the one in the demo video)
 
 Measured by the labs on real data. Under the default procedures the Reviewer sent both studies back; the Director
 ran a methods study for each lab, issued new SOPs, and both re-measured studies passed review in round 2. The
-institute logged 12 problems in its own work, and every claimed number traced back to a tool output (44 of 44).
+institute logged 11 problems in its own work, and every claimed number traced back to a tool output (42 of 42).
 
 | Study | Default SOP (v1) | SOP issued by the Director |
 |---|---|---|
-| Lake Mead surface area vs USBR gauge, 2018–2026 | Pearson r **0.27**, scatter ±49.6 km² (73 months) | Pearson r **0.98**, scatter ±5.1 km² (39 months), water-sop-3 |
-| Tartar Fire (Idaho, 2026) burn map vs official perimeter | IoU **0.66**, precision 0.69, 267 km² outside | IoU **0.89**, precision 0.96, 26 km² outside, fire-sop-2 |
+| Lake Mead surface area vs USBR gauge, 2018–2026 | Pearson r **0.27**, scatter ±49.6 km² (73 months) | Pearson r **0.96**, scatter ±7.0 km², all 73 months kept (water-sop-3: dark-water rule) |
+| Tartar Fire (Idaho, 2026) burn map vs official perimeter | IoU **0.66**, precision 0.69, 267 km² outside | IoU **0.90**, precision 0.97, 21 km² outside; 613 km², 96% of the official area (fire-sop-2) |
 
-- **How v1 was caught:** the Reviewer *watched* all 73 measured months of the lake as a time-lapse with Muse Spark
-  Open's video understanding, flagged the months where the lake rendered black and the outline missed it
-  (2020-10-22, 2021-01-30, 2025-02-18), confirmed them frame by frame with `view_evidence`, and re-measured points
-  from raw imagery. For the fire it found 267 km² mapped as burned outside the official perimeter.
+- **How v1 was caught, with two Meta models.** The Water Lab, then the Reviewer, watched all 73 measured months as
+  a time-lapse with Muse Spark Open's video understanding (14 months flagged) and cross-checked every month with
+  SAM 2.1. The two instruments disagreed in exactly three months, the ones where the lake rendered black: on
+  2025-02-18 the water index counted 5.6 km² of water and SAM outlined 262 km² (overlap IoU 0.01). The Reviewer
+  confirmed them with `view_evidence` and re-measured points from raw imagery. For the fire it found 267 km² mapped
+  as burned outside the official perimeter, across the Snake River and in farm fields.
 - **What went wrong in v1, water:** in low-sun winter scenes the atmospheric correction drives Lake Mead's
-  reflectance to near zero in every band. The water index turns to noise and most of the lake is missed
-  (5.6 km² measured on 2025-02-18). The water methods study (6 detection variants on 42 test dates) showed a dark-water
-  rule restores agreement with the gauge (plain water index r −0.04, with the rule r 0.92), and its quality-gate
-  table showed what stricter scene selection costs in months and gains in agreement.
-- **The Director corrected itself.** It first issued water-sop-2 (dark-water rule; at most half the lake
-  near-black; outline overlaps ESA's own water classification at IoU ≥ 0.8). Before sending the study back it
-  applied the institute's rule *among procedures that meet the standard, keep the most data* to the gate table it
-  already had, and issued water-sop-3 with IoU ≥ 0.75: 39 months instead of about 30, still r 0.98. The cost of
-  the gates is stated plainly: 39 of 106 months pass (only 2 in 2023).
+  reflectance to near zero in every band. The water index turns to noise and most of the lake is missed. The water
+  methods study (6 detection variants on 42 test dates) showed a dark-water rule restores agreement with the gauge
+  (plain water index r −0.04, with the rule r 0.92), and its quality-gate table showed what stricter scene
+  selection costs in months and gains in agreement.
+- **The Director corrected itself.** It first issued water-sop-2 (the dark-water rule plus a gate: the outline must
+  overlap ESA's own water classification at IoU ≥ 0.8). Before sending the study back it applied the institute's
+  rule *among procedures that meet the standard, keep the most data* and issued water-sop-3, the dark-water rule
+  with no gates: every month kept, r 0.96. (In cycle-7 the same rule moved it from an IoU ≥ 0.8 gate to ≥ 0.75:
+  39 months, r 0.98.)
+- **After the fix, SAM agrees every month** (no disagreements, median overlap IoU 0.89), and it still earns its
+  place: the bulletin discloses that the dark-water rule over-counts on 2021-01-30 (374.5 km² against SAM's
+  337 km²), an isolated month the Reviewer judged not systematic.
 - **What went wrong in v1, fire:** crop harvest, seasonal drying and land across the Snake River were mapped as
-  burned. The fire methods study scores procedure variants against the perimeter in seconds; counting only within
-  1 km of the incident's perimeter scored best (IoU 0.89, 620 km², 97% of the official area). Since cycle-7 the
-  study also scores an ESA WorldCover cropland mask: on this fire it adds little (IoU 0.90), because only 1.3 km²
-  of the perimeter is farmland.
+  burned. The fire methods study scores 24 procedure variants against the perimeter in seconds; counting only within
+  1 km of the incident's perimeter and leaving out ESA WorldCover cropland scored best (IoU 0.90).
 - **Context the Water Lab reported:** USBR's end-of-month record shows Lake Mead at 1,037.8 ft on 2026-09-30,
   its lowest since 1940, below the July 2022 low of 1,040.92 ft.
 - **Earlier cycles** each exposed a flaw that is now fixed in the code: a reviewer that ran out of steps, a
   Director that sent work back without changing the procedure (now refused by a guard), a Director that guessed a
   fire threshold instead of measuring one (now it runs the fire methods study), a quality gate that measured the
-  wrong thing, and a stale settings file that crashed re-measurement (the lab reported the failure instead of
-  inventing numbers).
+  wrong thing, a stale settings file that crashed re-measurement (the lab reported the failure instead of
+  inventing numbers), and a reviewer that wrote its verdict as text and then re-ran its checks (now told plainly
+  that text is not a submission).
 
 A static, key-free replay of an earlier run (cycle-5): [hack-metam-static](https://github.com/chinesepowered/hack-metam-static).
 
@@ -91,12 +95,12 @@ Structured results come back through tool calls rather than `response_format=jso
 whitespace on the Baseten deployment. Evidence images are capped at 8 per request, the deployment's limit.
 
 **Video review, measured.** `watch_timelapse` turns the measured series into clips of 24 months at 2 s per frame
-(the model samples about one frame per second) and reviews them in parallel. In cycle-7 the Reviewer watched the
-flawed v1 series (73 months, 4 clips, 28 s) and flagged 14 months, including all three dark-water failures with
-exact dates (2020-10-22, 2021-01-30, 2025-02-18). On the 39-month water-sop-3 series it flagged three isolated
-months (a thin false-water line, a gap in a narrow channel, cloud shadow); the Reviewer confirmed them with
-`view_evidence`, judged them not systematic, and the bulletin discloses them. Flags are matched to real data
-points by date and printed area, so a misread caption cannot invent a month.
+(the model samples about one frame per second) and reviews them in parallel. In cycle-8 the Reviewer watched the
+flawed v1 series (73 months, 4 clips, 34 s) and flagged 14 months, including all three dark-water failures with
+exact dates (2020-10-22, 2021-01-30, 2025-02-18). On the fixed series it flagged three isolated months (small
+false-water patches on 2021-01-30 and 2025-02-18, a gap in a narrow channel on 2025-05-19), which the Reviewer
+confirmed with `view_evidence`, judged not systematic, and the bulletin discloses. Flags are matched to real data points by date
+and printed area, so a misread caption cannot invent a month.
 
 **A second Meta model as a second instrument.** `sam_check` runs SAM 2.1 locally (about 2 s per month on 4 CPU
 cores, cached per date) and compares its outline with the water index month by month. Measured on the stored
@@ -105,7 +109,8 @@ series (`scripts/sam_eval.py`):
 | Series | Water index vs gauge | SAM 2.1 vs gauge | Months where the two disagree (outline IoU < 0.5) |
 |---|---|---|---|
 | Default SOP, 73 months | r 0.27, ±49.6 km² | r **0.92**, ±9.0 km² | exactly the three dark-water failures: 2025-02-18 (IoU 0.01), 2020-10-22 (0.17), 2021-01-30 (0.19); every other month ≥ 0.71 |
-| water-sop-3, 39 months | r 0.98, ±5.1 km² | r 0.96, ±6.5 km² | none |
+| Dark-water rule (cycle-8's water-sop-3), 73 months | r 0.96, ±7.0 km² | r 0.91, ±8.9 km² | none |
+| Dark-water rule with gates (cycle-7's water-sop-3), 39 months | r 0.98, ±5.1 km² | r 0.96, ±6.5 km² | none |
 
 So SAM finds the instrument's failures without a gauge, which matters for the many lakes that have no gauge.
 
@@ -174,7 +179,7 @@ scripts/         baselines, methods study, mascot generator, demo video
 ## Limitations
 
 - Lake areas are measured at 40 m; scenes that fail quality gates are rejected rather than guessed (73 of 106 months
-  pass the default gates, 39 pass the stricter gates of cycle-7's water-sop-3, only 2 of them in 2023).
+  pass the default gates and cycle-8's dark-water rule keeps all of them; cycle-7's stricter gates kept 39).
 - Fire maps compare one pre-fire and one post-fire scene; perimeters include unburned islands, so burned area is
   expected to be below the official area.
 - SAM 2.1 cross-checks the water instrument but is not itself an SOP option, and its outline runs about 6% wider
