@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -25,11 +26,13 @@ DEFAULT_BRIEFING = ("Two questions this cycle. (1) Lake Mead is in the news agai
 
 
 def roles() -> dict[str, str]:
-    """Open weights for the labs; the Meta Model API for director/reviewer when its key is configured."""
+    """Muse Spark Open (open weights) for every role. ORBITAL_META_ROLES=1 moves the Director and Reviewer to
+    Muse Wonder / Muse Spark 1.3 on the Meta Model API (needs MODEL_API_KEY)."""
+    meta = os.environ.get("ORBITAL_META_ROLES") == "1"
     return {
         "lab": llm.pick("spark-open"),
-        "reviewer": llm.pick("spark", "spark-open"),
-        "director": llm.pick("wonder", "spark", "spark-open"),
+        "reviewer": llm.pick("spark", "spark-open") if meta else llm.pick("spark-open"),
+        "director": llm.pick("wonder", "spark", "spark-open") if meta else llm.pick("spark-open"),
     }
 
 

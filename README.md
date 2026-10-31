@@ -61,7 +61,7 @@ Measured by the labs on real data. Under SOP v1 both studies failed review; the 
 | Role | Model | How it is used |
 |---|---|---|
 | Director, labs, reviewer | **Muse Spark Open** (`meta-models/muse-spark-open-1026`, open weights, served by Baseten) | Tool calling, multi-step agent loops, vision over satellite evidence images, reasoning |
-| Director / reviewer, when `MODEL_API_KEY` is set | Muse Wonder / Muse Spark 1.3 (Meta Model API) | Picked automatically by `orbital.institute.roles()` |
+| Director / reviewer, optional | Muse Wonder / Muse Spark 1.3 (Meta Model API) | Opt in with `ORBITAL_META_ROLES=1` and `MODEL_API_KEY` (see `orbital.institute.roles()`) |
 
 Structured results come back through tool calls rather than `response_format=json_schema`, which degenerates into
 whitespace on the Baseten deployment. Evidence images are capped at 8 per request, the deployment's limit.

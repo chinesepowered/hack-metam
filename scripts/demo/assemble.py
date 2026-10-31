@@ -11,6 +11,7 @@ import wave
 from orbital.config import RUNS_DIR
 
 DEMO = RUNS_DIR / "demo"
+SHORT = ("hook", "reject", "fix", "fix2", "close")  # scenes kept in the X cut (fix2 only exists after 3 rounds)
 
 
 def main():
@@ -37,9 +38,34 @@ def main():
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", rec["video"], "-i", str(out_wav),
                     "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p",
                     "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(out)], check=True)
-    dur = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(out)],
-                         capture_output=True, text=True).stdout.strip()
-    print(f"{out} ({float(dur):.1f}s)")
+    print(f"{out} ({duration(out):.1f}s)")
+    short_cut(out, rec["marks"], timeline)
+
+
+def duration(path) -> float:
+    return float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
+                                 str(path)], capture_output=True, text=True).stdout.strip())
+
+
+def short_cut(full, marks, timeline, keep=SHORT):
+    """A ~45 s cut for X: whole scenes only, so every sentence of narration stays intact."""
+    ends = {m["id"]: (marks[i + 1]["start"] if i + 1 < len(marks) else duration(full)) for i, m in enumerate(marks)}
+    parts = []
+    for m in marks:
+        if m["id"] in keep:
+            part = DEMO / f"part-{m['id']}.mp4"
+            subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{m['start']:.2f}", "-to", f"{ends[m['id']]:.2f}",
+                            "-i", str(full), "-c:v", "libx264", "-crf", "20", "-c:a", "aac", str(part)], check=True)
+            parts.append(part)
+    listing = DEMO / "parts.txt"
+    listing.write_text("".join(f"file '{p}'\n" for p in parts))
+    out = DEMO / "orbital-x.mp4"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(listing),
+                    "-c", "copy", "-movflags", "+faststart", str(out)], check=True)
+    for p in parts:
+        p.unlink()
+    listing.unlink()
+    print(f"{out} ({duration(out):.1f}s)")
 
 
 if __name__ == "__main__":

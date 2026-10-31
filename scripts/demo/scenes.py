@@ -53,42 +53,60 @@ def facts(session: str) -> dict:
 
 
 def scenes(session: str) -> list[dict]:
+    """The script follows what the session actually did: how many rounds, which SOPs, which verdicts."""
     f = facts(session)
-    return [
+    state = json.loads((RUNS_DIR / "sessions" / session / "state.json").read_text())
+    fire_sops = [h for h in state.get("sop_history", []) if h["lab"] == "fire"]
+    rounds = len(state.get("rounds", []))
+    out = [
         {"id": "title", "visual": "/demo/title.html",
          "text": "Hi! I'm Capy. I run Orbital, a tiny Earth-science institute where every scientist is an AI agent, "
-                 "and every single number gets checked."},
+                 "and every number gets checked."},
         {"id": "hook", "visual": "/demo/hook.html",
-         "text": f"This is Lake Mead, the largest reservoir in the United States. In {f['low_month']}, its gauge read "
+         "text": f"This is Lake Mead, the largest reservoir in the United States. In {f['low_month']}, its gauge hit "
                  f"{f['low_ft']} feet, the lowest since 1940. We wanted to measure it ourselves, from orbit."},
-        {"id": "crew", "visual": "replay:round",
-         "text": "Here's mission control. The Director plans the work. The Water Lab and the Fire Lab measure the "
-                 "planet from free Sentinel-2 satellite images. The Reviewer signs off on every finding, and the "
-                 "Auditor traces every number back to a tool. The agents run on Muse Spark Open, Meta's open-weights model."},
-        {"id": "round1", "visual": "replay:review",
-         "text": "I gave the Director two questions: how much has Lake Mead changed since 2018, and how big was this "
-                 "summer's Tartar Fire in Idaho? The labs measured 106 months of Lake Mead and mapped the fire. "
-                 "Every number traced back to a tool, so the Auditor was happy."},
-        {"id": "reject", "visual": "replay:sop_update",
-         "text": f"But the Reviewer looked at the evidence and sent both studies back. On winter dates the lake turned "
-                 f"almost black, and our water index missed most of it. Agreement with the gauge was just {f['r1']}. "
-                 f"And the fire map counted {f['outside1']} square kilometers of farm fields and neighboring land as burned."},
-        {"id": "fix", "visual": "replay:round2",
-         "text": f"So the Director ran a methods study, picked the procedure that best matched the gauge, and issued "
-                 f"new standard procedures to both labs. Everything was measured again. Agreement jumped from "
-                 f"{f['r1']} to {f['r2']}, and the fire map now overlaps the official perimeter at {f['iou2']}, "
-                 f"with {f['prec2']} percent precision."},
-        {"id": "publish", "visual": "replay:end",
-         "text": "This time the Reviewer accepted, and the Director published the bulletin, including a section on "
-                 "the mistakes we caught in our own work."},
-        {"id": "verify", "visual": "/demo/verify.html",
-         "text": "Every finding passes five checks: independent measurement methods, official ground truth, a "
-                 "deterministic number audit, a vision review of the satellite evidence, and an independent "
-                 "re-measurement from raw imagery."},
-        {"id": "close", "visual": "/demo/close.html",
-         "text": "Satellite data is free, and it covers every reservoir and every wildfire on Earth. Orbital turns it "
-                 "into verified science, around the clock, with one person and a crew of capybaras. Thanks for watching!"},
+        {"id": "crew", "visual": "replay:r1",
+         "text": "This is mission control. The Director plans the work. The Water Lab and Fire Lab measure the planet "
+                 "from free Sentinel-2 satellite images. The Reviewer signs off on every finding, and the Auditor "
+                 "traces every number back to a tool. The agents run on Muse Spark Open, Meta's open-weights model."},
+        {"id": "round1", "visual": "replay:r1_review",
+         "text": "I asked two questions: how much has Lake Mead changed since 2018, and how big was this summer's "
+                 "Tartar Fire in Idaho? The labs measured 106 months of the lake and mapped the fire, and every "
+                 "number traced back to a tool."},
+        {"id": "reject", "visual": "replay:r1_decide",
+         "text": f"But the Reviewer checked the satellite evidence and sent both studies back. In winter the lake "
+                 f"looked almost black, so our water index missed most of it. Agreement with the gauge was just "
+                 f"{f['r1']}. And the fire map counted {f['outside1']} square kilometers of farmland as burned."},
     ]
+    if rounds >= 3 and len(fire_sops) >= 2:
+        out += [
+            {"id": "fix", "visual": "replay:r2_decide",
+             "text": f"So the Director ran a methods study and issued new procedures to both labs. The water fix worked "
+                     f"first time: agreement jumped from {f['r1']} to {f['r2']}. The fire map improved, but it still "
+                     f"missed the institute's bar."},
+            {"id": "fix2", "visual": "replay:bulletin",
+             "text": f"So the Director tightened the fire procedure again. On the third try, the burn map overlapped the "
+                     f"official perimeter at {f['iou2']}, with {f['prec2']} percent precision. Both findings passed "
+                     f"review and went into the bulletin."},
+        ]
+    else:
+        out += [
+            {"id": "fix", "visual": "replay:bulletin",
+             "text": f"So the Director ran a methods study and issued new procedures to both labs. Agreement jumped from "
+                     f"{f['r1']} to {f['r2']}, and the fire map now overlaps the official perimeter at {f['iou2']}, "
+                     f"with {f['prec2']} percent precision. Both passed review and went into the bulletin."},
+        ]
+    out += [
+        {"id": "publish", "visual": "replay:end",
+         "text": "The bulletin even lists the mistakes we caught in our own work."},
+        {"id": "verify", "visual": "/demo/verify.html",
+         "text": "Every finding passes five checks: independent methods, official ground truth, a number audit, a "
+                 "vision review of the evidence, and a fresh re-measurement from raw imagery."},
+        {"id": "close", "visual": "/demo/close.html",
+         "text": "Satellite data is free, and it covers every lake and every wildfire on Earth. Orbital turns it into "
+                 "verified science, around the clock, with one person and a crew of capybaras. Thanks for watching!"},
+    ]
+    return out
 
 
 if __name__ == "__main__":
