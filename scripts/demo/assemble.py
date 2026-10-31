@@ -1,23 +1,25 @@
 """Lay each scene's narration at the moment its scene started on screen, then mux with the recording.
 
-    uv run python scripts/demo/assemble.py   # → runs/demo/orbital-demo.mp4
+    uv run python scripts/demo/assemble.py     # → runs/demo/orbital-demo.mp4
+    uv run python scripts/demo/assemble.py x   # → runs/demo/orbital-x.mp4 (from runs/demo-x)
 """
 from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import wave
 
 from orbital.config import RUNS_DIR
 
 DEMO = RUNS_DIR / "demo"
-SHORT = ("hook", "reject", "publish", "close")  # scenes kept in the X cut
 
 
-def main():
-    timeline = {s["id"]: s for s in json.loads((DEMO / "timeline.json").read_text())}
-    rec = json.loads((DEMO / "video" / "marks.json").read_text())
-    out_wav = DEMO / "narration.wav"
+def main(cut: str = "full"):
+    src = DEMO if cut == "full" else RUNS_DIR / "demo-x"  # the X cut has its own script, audio and recording
+    timeline = {s["id"]: s for s in json.loads((src / "timeline.json").read_text())}
+    rec = json.loads((src / "video" / "marks.json").read_text())
+    out_wav = src / "narration.wav"
     rate = None
     frames = bytearray()
     for mark in rec["marks"]:
@@ -34,12 +36,11 @@ def main():
         w.setsampwidth(2)
         w.setframerate(rate)
         w.writeframes(bytes(frames))
-    out = DEMO / "orbital-demo.mp4"
+    out = DEMO / ("orbital-demo.mp4" if cut == "full" else "orbital-x.mp4")
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", rec["video"], "-i", str(out_wav),
                     "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p",
                     "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(out)], check=True)
     print(f"{out} ({duration(out):.1f}s)")
-    short_cut(out, rec["marks"], timeline)
 
 
 def duration(path) -> float:
@@ -47,26 +48,5 @@ def duration(path) -> float:
                                  str(path)], capture_output=True, text=True).stdout.strip())
 
 
-def short_cut(full, marks, timeline, keep=SHORT):
-    """A ~45 s cut for X: whole scenes only, so every sentence of narration stays intact."""
-    ends = {m["id"]: (marks[i + 1]["start"] if i + 1 < len(marks) else duration(full)) for i, m in enumerate(marks)}
-    parts = []
-    for m in marks:
-        if m["id"] in keep:
-            part = DEMO / f"part-{m['id']}.mp4"
-            subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{m['start']:.2f}", "-to", f"{ends[m['id']]:.2f}",
-                            "-i", str(full), "-c:v", "libx264", "-crf", "20", "-c:a", "aac", str(part)], check=True)
-            parts.append(part)
-    listing = DEMO / "parts.txt"
-    listing.write_text("".join(f"file '{p}'\n" for p in parts))
-    out = DEMO / "orbital-x.mp4"
-    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(listing),
-                    "-c", "copy", "-movflags", "+faststart", str(out)], check=True)
-    for p in parts:
-        p.unlink()
-    listing.unlink()
-    print(f"{out} ({duration(out):.1f}s)")
-
-
 if __name__ == "__main__":
-    main()
+    main(*sys.argv[1:2])

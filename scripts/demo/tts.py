@@ -1,6 +1,6 @@
 """Synthesize the demo narration with AssemblyAI text-to-speech, one WAV per scene.
 
-    ASSEMBLYAI_API_KEY=... uv run python scripts/demo/tts.py cycle-1 [voice_id]
+    ASSEMBLYAI_API_KEY=... uv run python scripts/demo/tts.py cycle-1 [full|x] [voice_id]
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from pathlib import Path
 import requests
 
 sys.path.insert(0, str(Path(__file__).parent))
-from scenes import scenes  # noqa: E402
+from scenes import scenes, x_scenes  # noqa: E402
 
 from orbital.config import RUNS_DIR  # noqa: E402
 
@@ -30,11 +30,11 @@ def synth(text: str, voice: str, out: Path) -> float:
         return w.getnframes() / w.getframerate()
 
 
-def main(session: str = "cycle-1", voice: str = VOICE):
-    out = RUNS_DIR / "demo" / "audio"
+def main(session: str = "cycle-1", cut: str = "full", voice: str = VOICE):
+    out = RUNS_DIR / ("demo" if cut == "full" else "demo-x") / "audio"
     out.mkdir(parents=True, exist_ok=True)
     timeline = []
-    for s in scenes(session):
+    for s in (scenes if cut == "full" else x_scenes)(session):
         wav, said = out / f"{s['id']}.wav", out / f"{s['id']}.txt"
         if wav.exists() and said.exists() and said.read_text() == f"{voice}\n{s['text']}":
             with wave.open(str(wav)) as w:  # unchanged line: keep the audio already synthesized

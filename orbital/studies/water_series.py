@@ -154,7 +154,11 @@ def _run_series_locked(label, bbox, start, end, out_dir: Path, sop: WaterSOP, wo
             cache.write_text(json.dumps(sorted(done.values(), key=lambda p: p["month"]), indent=1))
             if on_point:
                 on_point(point)
-    return sorted(done.values(), key=lambda p: p["month"])
+    points = sorted(done.values(), key=lambda p: p["month"])
+    frames = [out_dir / p["evidence"] for p in points if p.get("usable") and p.get("evidence")]
+    if frames and (todo or not (out_dir / "timelapse.mp4").exists()):  # the series' time-lapse, for people
+        render.frames_to_mp4(frames, out_dir / "timelapse.mp4", fps=6)
+    return points
 
 
 def to_date(s: str) -> date:

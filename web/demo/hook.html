@@ -6,7 +6,7 @@
 
 <script>
 fetch("/api/study/lake-mead" + location.search).then(r => r.json()).then(s => {
-  const v = s.versions[s.versions.length - 1];
-  document.getElementById("v").src = v.timelapse;
+  const v = s.versions.filter((x) => x.timelapse).pop();  // the newest series that has a time-lapse
+  if (v) document.getElementById("v").src = v.timelapse;
 });
 </script></body></html>

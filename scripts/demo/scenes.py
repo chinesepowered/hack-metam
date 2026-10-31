@@ -1,6 +1,7 @@
 """Demo video scenes. Narration numbers are read from the run's own outputs, never typed by hand.
 
-    uv run python scripts/demo/scenes.py cycle-1   # prints the narration for review
+    uv run python scripts/demo/scenes.py cycle-1     # prints the narration for review
+    uv run python scripts/demo/scenes.py cycle-1 x   # the short cut for X
 """
 from __future__ import annotations
 
@@ -139,11 +140,33 @@ def scenes(session: str) -> list[dict]:
     return out
 
 
+def x_scenes(session: str) -> list[dict]:
+    """A ~45 s cut for X: the hook, the catch, the fix. Same facts as the full video, fewer words."""
+    f = facts(session)
+    if not f.get("sam"):
+        raise SystemExit(f"the X cut is written around SAM's catch; {session} has no SAM disagreement")
+    return [
+        {"id": "x-hook", "visual": "/demo/hook.html",
+         "text": f"Lake Mead just hit its lowest level since 1940. So my crew of AI scientists measured it from orbit."},
+        {"id": "x-catch", "visual": "replay:r1_decide",
+         "text": f"Their first answer was wrong, and they caught it. The Reviewer watched {f['watched']} months of "
+                 f"satellite time-lapse with Meta's Muse Spark Open, and checked every month with Meta's SAM 2.1. "
+                 f"In {f['sam']['month']}, our water index saw {f['sam']['index_km2']} square kilometers of lake. "
+                 f"SAM saw {f['sam']['sam_km2']}.",
+         **({"spotlight": {"src": f["sam"]["image"], "from": 2, "to": 4}} if f["sam"].get("image") else {})},
+        {"id": "x-fix", "visual": "replay:end",
+         "text": f"So the Director fixed the method. Agreement with the official gauge jumped from {f['r1']} to "
+                 f"{f['r2']}, and every number traces back to a tool."},
+        {"id": "x-close", "visual": "/demo/close.html",
+         "text": "Orbital: verified science from free satellite data, with one person and a crew of capybaras."},
+    ]
+
+
 if __name__ == "__main__":
     session = sys.argv[1] if len(sys.argv) > 1 else "cycle-1"
     print(json.dumps(facts(session), indent=1))
     total = 0
-    for s in scenes(session):
+    for s in (x_scenes if sys.argv[2:3] == ["x"] else scenes)(session):
         words = len(s["text"].split())
         total += words
         print(f"\n[{s['id']}] ({words} words) {s['text']}")
