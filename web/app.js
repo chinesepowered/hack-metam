@@ -67,7 +67,11 @@ function summarize(name, r) {
       return r.latest ? `${r.months_measured} months · latest ${r.latest.area_km2} km² · ${esc(r.sop)}` : "";
     case "watch_timelapse":
       return r.frames_watched != null
-        ? `🎬 watched ${r.frames_watched} months as ${r.clips} time-lapse clip(s) in ${r.seconds}s · <b>flagged ${Array.isArray(r.flagged) ? r.flagged.length : "?"} month(s)</b>${Array.isArray(r.shown) && r.shown.length ? ` · worst: ${r.shown.join(", ")}` : ""}`
+        ? `🎬 watched ${r.frames_watched} months as ${r.clips} time-lapse clip(s) in ${r.seconds}s · ${(() => {
+            const n = r.flagged_count ?? (Array.isArray(r.flagged) ? r.flagged.length : null);
+            const worst = Array.isArray(r.shown) && r.shown.length ? `worst: <b>${r.shown.join(", ")}</b>` : "";
+            return n === 0 ? "<b>no problem months</b>" : [n != null ? `<b>flagged ${n} month(s)</b>` : "", worst].filter(Boolean).join(" · ");
+          })()}`
         : "";
     case "view_evidence":
       return Array.isArray(r.shown) && r.shown.length ? `looked at ${r.shown.join(", ")}` : "";

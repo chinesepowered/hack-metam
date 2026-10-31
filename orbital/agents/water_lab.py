@@ -239,7 +239,8 @@ def watch_timelapse(target: str, start: str | None = None, end: str | None = Non
             seen_dates.add((f["matched_date"], f["problem"]))
             unique.append(f)
     worst = sorted(unique, key=lambda f: f["measured_km2"])[:3]  # largest undercounts first
-    return {"frames_watched": len(good), "clips": len(clips), "seconds": round(seconds, 1), "flagged": unique,
+    return {"frames_watched": len(good), "clips": len(clips), "seconds": round(seconds, 1),
+            "flagged_count": len(unique), "flagged": unique,
             "unmatched": unmatched, "shown": [f["matched_date"] for f in worst],
             "how_to_use": "the model skims the video; confirm each flagged month with view_evidence before relying on it",
             "known_dates": len(by_date), "_images": [out_dir / by_date[f["matched_date"]]["evidence"] for f in worst]}
