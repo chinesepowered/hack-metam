@@ -35,7 +35,13 @@ def main(session: str = "cycle-1", voice: str = VOICE):
     out.mkdir(parents=True, exist_ok=True)
     timeline = []
     for s in scenes(session):
-        seconds = synth(s["text"], voice, out / f"{s['id']}.wav")
+        wav, said = out / f"{s['id']}.wav", out / f"{s['id']}.txt"
+        if wav.exists() and said.exists() and said.read_text() == f"{voice}\n{s['text']}":
+            with wave.open(str(wav)) as w:  # unchanged line: keep the audio already synthesized
+                seconds = w.getnframes() / w.getframerate()
+        else:
+            seconds = synth(s["text"], voice, wav)
+            said.write_text(f"{voice}\n{s['text']}")
         timeline.append(s | {"audio": str(out / f"{s['id']}.wav"), "seconds": round(seconds, 2)})
         print(f"{s['id']:8s} {seconds:5.1f}s")
     (out.parent / "timeline.json").write_text(json.dumps(timeline, indent=1))

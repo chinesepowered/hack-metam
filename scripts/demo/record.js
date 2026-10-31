@@ -14,21 +14,33 @@ const CAPTION_CSS = `#cap{position:fixed;left:50%;bottom:34px;transform:translat
   background:rgba(4,10,22,.86);color:#fff;font:600 25px/1.35 ui-sans-serif,system-ui,sans-serif;padding:12px 22px;
   border-radius:14px;border:1px solid rgba(255,255,255,.12);text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.45)}`;
 
+// A piece of evidence shown full size while the narration quotes it.
+const SPOTLIGHT_CSS = `#spot{position:fixed;inset:0;z-index:98;display:flex;align-items:center;justify-content:center;
+  background:rgba(2,6,14,.72);padding:28px 0 120px}#spot img{max-height:100%;max-width:1180px;border-radius:14px;
+  box-shadow:0 18px 60px rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.15)}`;
+
 function sentences(text) {
   // Split only where punctuation is followed by a space, so "1,037.8" and "0.27" stay whole.
   return text.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean);
 }
 
-async function captions(page, text, seconds) {
-  await page.addStyleTag({ content: CAPTION_CSS }).catch(() => {});
+async function captions(page, text, seconds, spotlight) {
+  await page.addStyleTag({ content: CAPTION_CSS + SPOTLIGHT_CSS }).catch(() => {});
   const parts = sentences(text);
   const total = parts.reduce((n, s) => n + s.length, 0);
-  for (const s of parts) {
-    await page.evaluate((t) => {
+  for (const [i, s] of parts.entries()) {
+    const show = spotlight && i >= spotlight.from && i < spotlight.to ? spotlight.src : null;
+    await page.evaluate(([t, src]) => {
       let el = document.getElementById("cap");
       if (!el) { el = document.createElement("div"); el.id = "cap"; document.body.appendChild(el); }
       el.textContent = t;
-    }, s);
+      let spot = document.getElementById("spot");
+      if (src && !spot) {
+        spot = document.createElement("div"); spot.id = "spot";
+        spot.innerHTML = `<img src="${src}" alt="">`;
+        document.body.appendChild(spot);
+      } else if (!src && spot) spot.remove();
+    }, [s, show]);
     await page.waitForTimeout((s.length / total) * seconds * 1000);
   }
 }
@@ -69,7 +81,7 @@ function boundaries(events) {
       if (target === undefined) throw new Error(`no cut point ${scene.visual}; have ${Object.keys(bounds)}`);
       marks.push({ id: scene.id, start: (Date.now() - t0) / 1000 });
       const play = page.evaluate(([end, ms]) => window.orbital.playTo(end, ms), [target, Math.max(500, (seconds - 1.2) * 1000)]);
-      await captions(page, scene.text, seconds);
+      await captions(page, scene.text, seconds, scene.spotlight);
       await play;
       if (scene.visual === "replay:end") {
         await page.evaluate(() => window.orbital.showBulletin());

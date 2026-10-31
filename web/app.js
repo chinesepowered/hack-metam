@@ -23,11 +23,11 @@ const doing = {};
 function renderCrew(active) {
   $("crew").innerHTML = ["director", "water-lab", "fire-lab", "reviewer", "auditor"].map((id) => {
     const c = CREW[id];
-    let model = prettyModel(models[MODEL_OF[id]]) || (id === "auditor" ? "deterministic code, no model" : "");
-    if (models.vision && (id === "water-lab" || id === "reviewer")) model += " + SAM 2.1, open weights, run locally";
+    const model = prettyModel(models[MODEL_OF[id]]) || (id === "auditor" ? "deterministic code, no model" : "");
+    const vision = models.vision && (id === "water-lab" || id === "reviewer") ? "+ SAM 2.1 · open weights, run locally" : "";
     return `<div class="member ${active === id ? "active" : ""}">
       <img src="${c.img}" alt="">
-      <div><div class="name">${c.name}</div><div class="model">${esc(model)}</div>
+      <div><div class="name">${c.name}</div><div class="model">${esc(model)}</div>${vision ? `<div class="model">${vision}</div>` : ""}
       <div class="doing">${esc(doing[id] || c.role)}</div></div></div>`;
   }).join("");
 }

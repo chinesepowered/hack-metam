@@ -74,7 +74,9 @@ class Agent:
             messages.append(reply.as_message())
 
             if not reply.tool_calls:
-                messages.append({"role": "user", "content": f"Continue with tools. Finish by calling {terminal}."})
+                # A written answer is not a submission: say so, or the model re-runs its checks to fill the turn.
+                messages.append({"role": "user", "content": f"Text alone is not recorded. If your work is done, call "
+                                                            f"{terminal} now with it; otherwise continue with tools."})
                 continue
 
             visuals, finished = [], None
