@@ -23,7 +23,8 @@ const doing = {};
 function renderCrew(active) {
   $("crew").innerHTML = ["director", "water-lab", "fire-lab", "reviewer", "auditor"].map((id) => {
     const c = CREW[id];
-    const model = prettyModel(models[MODEL_OF[id]]) || (id === "auditor" ? "deterministic code, no model" : "");
+    let model = prettyModel(models[MODEL_OF[id]]) || (id === "auditor" ? "deterministic code, no model" : "");
+    if (models.vision && (id === "water-lab" || id === "reviewer")) model += " + SAM 2.1, open weights, run locally";
     return `<div class="member ${active === id ? "active" : ""}">
       <img src="${c.img}" alt="">
       <div><div class="name">${c.name}</div><div class="model">${esc(model)}</div>
@@ -72,6 +73,13 @@ function summarize(name, r) {
             const worst = Array.isArray(r.shown) && r.shown.length ? `worst: <b>${r.shown.join(", ")}</b>` : "";
             return n === 0 ? "<b>no problem months</b>" : [n != null ? `<b>flagged ${n} month(s)</b>` : "", worst].filter(Boolean).join(" · ");
           })()}`
+        : "";
+    case "sam_check":
+      return r.months_checked != null
+        ? `🔍 SAM 2.1 outlined the lake in ${r.months_checked} months · ${r.disagreement_count
+            ? `<b>disagrees with the water index in ${r.disagreement_count}</b>${Array.isArray(r.shown) ? `: ${r.shown.join(", ")}` : ""}`
+            : "<b>agrees with the water index every month</b>"}${r.sam_vs_gauge?.pearson_r != null
+            ? ` · SAM vs gauge r = ${r.sam_vs_gauge.pearson_r}` : ""}`
         : "";
     case "view_evidence":
       return Array.isArray(r.shown) && r.shown.length ? `looked at ${r.shown.join(", ")}` : "";

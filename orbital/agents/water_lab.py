@@ -5,15 +5,18 @@ import base64
 import json
 import re
 import subprocess
+import time
 from datetime import date
 
 import numpy as np
 
 from orbital import sops
 from orbital.agents.runtime import Tool, schema
+from orbital.imagery import render
 from orbital.imagery.load import load_day
 from orbital.imagery.stac import search_scenes
-from orbital.instruments.water import measure_water
+from orbital.instruments import sam
+from orbital.instruments.water import iou, measure_water
 from orbital.studies.analysis import compare_to_elevation, usable_points
 from orbital.studies.water_series import run_series, series_dir
 from orbital.targets import WATER_TARGETS, data_dir
@@ -254,6 +257,66 @@ def watch_tool() -> Tool:
                 lambda a: watch_timelapse(a["target"], a.get("start"), a.get("end")))
 
 
+def sam_check(target: str, start: str | None = None, end: str | None = None) -> dict:
+    """A second, independent instrument: Meta's SAM 2.1 outlines the lake in every measured month's image."""
+    if not sam.available():
+        return {"error": "SAM 2.1 is not installed on this machine (uv sync --extra sam)"}
+    good = usable_points(_points(target, start, end))
+    if not good:
+        return {"error": "no measured months under the current SOP; measure the series first"}
+    base = series_dir(data_dir(target), sops.current("water"))
+    rows, masks, t0 = [], {}, time.time()
+    for p in good:
+        h, w = p["mask_shape"]
+        o = sam.outline_month(target, p["date"], base / p["chip"], (h, w), p["pixel_area_m2"] ** 0.5)
+        mine = np.unpackbits(np.load(base / "masks" / f"{p['date']}.npy"))[: h * w].reshape(h, w).astype(bool)
+        masks[p["date"]] = (mine, o["mask"])
+        rows.append({"date": p["date"], "usable": True, "instrument_km2": round(p["area_km2"], 1),
+                     "area_km2": o["area_km2"], "overlap_iou": round(iou(mine, o["mask"]), 3)})
+    disagree = sorted([r for r in rows if r["overlap_iou"] < 0.5], key=lambda r: r["overlap_iou"])
+    shown = (disagree or sorted(rows, key=lambda r: r["overlap_iou"]))[:3]
+    images = []
+    for r in shown:
+        p = next(x for x in good if x["date"] == r["date"])
+        img = sam.compare_image(base / p["chip"], *masks[r["date"]],
+                                f"{WATER_TARGETS[target]['name']} · {r['date']}",
+                                f"cyan = water index {r['instrument_km2']:.0f} km² · magenta = SAM 2.1 outline "
+                                f"{r['area_km2']:.0f} km² · overlap IoU {r['overlap_iou']:.2f}")
+        images.append(render.save_png(img, base / "sam" / f"{r['date']}.png"))
+    out = {
+        "instrument": f"SAM 2.1 ({sam.MODEL_ID}, Meta open weights) running locally. It is prompted only with points "
+                      "that ESA WorldCover maps as permanent water and never sees the water index.",
+        "months_checked": len(rows),
+        "seconds": round(time.time() - t0, 1),
+        "median_overlap_iou": round(float(np.median([r["overlap_iou"] for r in rows])), 3),
+        "median_sam_to_instrument_area": round(float(np.median([r["area_km2"] / max(r["instrument_km2"], 0.1)
+                                                                for r in rows])), 2),
+        "disagreement_count": len(disagree),
+        "disagreements": [{"date": r["date"], "instrument_km2": r["instrument_km2"], "sam_km2": r["area_km2"],
+                           "overlap_iou": r["overlap_iou"]} for r in disagree],
+        "disagreement_rule": "overlap_iou < 0.5 between the two outlines",
+        "shown": [r["date"] for r in shown],
+        "how_to_read": "The two instruments fail in different ways, so a month where they disagree needs a look "
+                       "(view_evidence). SAM draws the shoreline a little wider; compare trends, not exact areas.",
+        "_images": images,
+    }
+    if target == "lake-mead":
+        truth = lake_mead_monthly()
+        for name, pts in (("sam_vs_gauge", rows), ("instrument_vs_gauge", good)):
+            g = compare_to_elevation(pts, truth)
+            out[name] = {k: g[k] for k in ("n", "pearson_r", "rmse_km2") if k in g}
+    return out
+
+
+def sam_tool() -> Tool:
+    return Tool("sam_check",
+                "Cross-check every measured month with a second, independent instrument: Meta's SAM 2.1 segmentation "
+                "model outlines the lake in the satellite image itself. Returns where the two disagree, each one's "
+                "agreement with the gauge, and images of the worst months (cyan = water index, magenta = SAM).",
+                schema(required=["target"], target={"type": "string"}, start={"type": "string"}, end={"type": "string"}),
+                lambda a: sam_check(a["target"], a.get("start"), a.get("end")))
+
+
 def evidence_paths(target: str, dates: list[str]):
     pts = {p.get("date"): p for p in _points(target)}
     base = series_dir(data_dir(target), sops.current("water"))
@@ -299,6 +362,7 @@ def make_tools() -> list[Tool]:
              schema(target={"type": "string"}, start={"type": "string"}, end={"type": "string"}),
              lambda a: ground_truth(a["target"], a.get("start"), a.get("end"))),
         watch_tool(),
+        sam_tool(),
         view_tool(),
         Tool("submit_finding", "Submit the study's finding to the Director. Ends your turn.",
              schema(required=["headline", "summary", "claims", "evidence_dates", "caveats", "confidence"],

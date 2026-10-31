@@ -5,6 +5,8 @@ import numpy as np
 import odc.stac
 import pystac
 import xarray as xr
+from odc.geo.geobox import GeoBox
+from odc.geo.geom import BoundingBox
 
 BANDS = ("blue", "green", "red", "nir", "swir16", "swir22", "scl")
 SCL_NODATA, SCL_CLOUD_SHADOW, SCL_WATER, SCL_SNOW = 0, 3, 6, 11
@@ -16,6 +18,13 @@ odc.stac.configure_rio(cloud_defaults=True)
 def utm_epsg(lon: float, lat: float) -> int:
     zone = int((lon + 180) // 6) + 1
     return (32600 if lat >= 0 else 32700) + zone
+
+
+def grid(bbox, resolution: float = 20) -> GeoBox:
+    """The UTM pixel grid `load_day` puts a bbox on, without loading any imagery."""
+    lon, lat = (bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2
+    return GeoBox.from_bbox(BoundingBox(*bbox, crs="EPSG:4326").to_crs(f"EPSG:{utm_epsg(lon, lat)}"),
+                            resolution=resolution)
 
 
 def load_day(items: list[pystac.Item], bbox, resolution: float = 20, bands=BANDS) -> xr.Dataset:

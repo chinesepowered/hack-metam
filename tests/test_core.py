@@ -7,6 +7,7 @@ from orbital import sops
 from orbital.agents.audit import audit_finding
 from orbital.agents.runtime import _cap_images
 from orbital.instruments.burn import FireSOP, measure_burn
+from orbital.instruments.sam import deep_points, wet_points
 from orbital.instruments.water import WaterSOP, keep_water_bodies, measure_water
 
 
@@ -134,3 +135,18 @@ def test_burn_offset_and_domain_remove_false_burns_outside_perimeter():
     assert v1.burned_outside_perimeter_km2 > 0.5
     assert v2.burned_outside_perimeter_km2 < 0.05
     assert v2.iou > v1.iou
+
+
+def test_sam_prompts_sit_deep_in_every_basin_and_skip_dry_ones():
+    water = np.zeros((200, 300), bool)
+    water[20:120, 20:120] = True    # west basin
+    water[60:70, 120:180] = True    # narrow channel
+    water[30:150, 180:280] = True   # east basin
+    water[180:186, 10:16] = True    # a pond, not part of the lake
+    pts = deep_points(water, pixel_m=40, n=4, min_sep_m=2000, min_depth_m=400)
+    assert any(c < 120 for _, c in pts) and any(c >= 180 for _, c in pts)  # both basins prompted
+    assert all(water[r, c] and r < 180 for r, c in pts)  # inside the lake, never in the pond
+    rgb = np.full((200, 300, 3), 40, np.uint8)
+    rgb[:, 200:] = 200  # the east basin's prompt area has dried out (bright)
+    kept = wet_points(rgb, pts)
+    assert kept and all(c < 200 for _, c in kept)

@@ -5,12 +5,12 @@ import math
 
 import numpy as np
 import rasterio
-import xarray as xr
+from odc.geo.geobox import GeoBox
 from rasterio.warp import Resampling, reproject, transform_bounds
 from rasterio.windows import from_bounds
 
 URL = "https://esa-worldcover.s3.eu-central-1.amazonaws.com/v200/2021/map/ESA_WorldCover_10m_2021_v200_{tile}_Map.tif"
-CROPLAND, WATER, BUILT = 40, 80, 50
+CROPLAND, WATER, BUILT = 40, 80, 50  # permanent water bodies = 80
 
 
 def _tiles(lon0, lat0, lon1, lat1):
@@ -20,9 +20,8 @@ def _tiles(lon0, lat0, lon1, lat1):
             yield f"{'N' if lat >= 0 else 'S'}{abs(lat):02d}{'E' if lon >= 0 else 'W'}{abs(lon):03d}"
 
 
-def classes_on(ds: xr.Dataset) -> np.ndarray:
-    """WorldCover class per pixel of `ds` (0 where no tile covers it)."""
-    gb = ds.odc.geobox
+def classes_on(gb: GeoBox) -> np.ndarray:
+    """WorldCover class per pixel of the grid `gb` (0 where no tile covers it)."""
     dst = np.zeros(gb.shape, np.uint8)
     lon0, lat0, lon1, lat1 = transform_bounds(f"EPSG:{gb.crs.epsg}", "EPSG:4326", *gb.extent.boundingbox)
     with rasterio.Env(GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR"):

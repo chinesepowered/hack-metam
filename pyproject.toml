@@ -34,3 +34,16 @@ packages = ["orbital"]
 dev = [
     "pytest>=9.2.0",
 ]
+
+[project.optional-dependencies]
+# Meta's SAM 2.1 (open weights, Apache-2.0) as a local vision instrument: uv sync --extra sam
+sam = ["torch>=2.4", "torchvision>=0.19", "transformers>=4.56"]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+torchvision = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

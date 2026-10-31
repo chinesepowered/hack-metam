@@ -17,6 +17,7 @@ from orbital.agents.audit import audit_finding
 from orbital.agents.events import EventLog
 from orbital.agents.runtime import Agent
 from orbital.config import RUNS_DIR
+from orbital.instruments import sam
 from orbital.targets import WATER_TARGETS
 
 DEFAULT_BRIEFING = ("Two questions this cycle. (1) Lake Mead is in the news again: how much has its surface "
@@ -42,7 +43,8 @@ def lab_task(study: dict, revision: dict | None) -> str:
             f"Target: {study['target']} ({t['name']}); period {study['start']} to {study['end']}; "
             f"current SOP: {sops.current('water').version}.\n"
             "Workflow: 1) measure_water_series  2) compare_with_ground_truth (same start/end)  3) watch_timelapse to "
-            "skim every month  4) view_evidence for flagged months, the latest date and the minimum  5) submit_finding.")
+            "skim every month  4) sam_check to cross-check every month with a second instrument  5) view_evidence "
+            "for flagged months, the latest date and the minimum  6) submit_finding.")
     return text + _revision_note(revision)
 
 
@@ -106,7 +108,8 @@ def run(briefing: str = DEFAULT_BRIEFING, max_rounds: int = 4, run_id: str | Non
     log = EventLog(run_dir / "events.jsonl")
     sops.reset()
     who = roles()
-    log.emit("institute", "start", briefing, roles={k: llm.model_name(v) for k, v in who.items()}, run_id=run_id)
+    vision = {"vision": sam.MODEL_ID} if sam.available() else {}  # second instrument for the Water Lab and Reviewer
+    log.emit("institute", "start", briefing, roles={k: llm.model_name(v) for k, v in who.items()} | vision, run_id=run_id)
 
     studies = director.plan(log, who["director"], briefing)
     state = {"run_id": run_id, "briefing": briefing, "studies": {s["id"]: s for s in studies},

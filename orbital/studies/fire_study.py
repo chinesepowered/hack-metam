@@ -80,7 +80,7 @@ def _select_pair(fire: dict, sop: FireSOP):
         pre = load_day(pre_items, aoi, resolution=sop.resolution_m)
         mask = _perimeter_mask(pre, fire["geometry"])
         if landcover is None:
-            landcover = classes_on(pre)  # same grid for every scene of this fire
+            landcover = classes_on(pre.odc.geobox)  # same grid for every scene of this fire
         for post_day, post_items in post_c[:MAX_TRIES]:
             post = load_day(post_items, aoi, resolution=sop.resolution_m)
             m = measure_burn(pre, post, mask, fire["official_km2"], sop, landcover)
