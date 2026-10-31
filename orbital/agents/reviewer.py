@@ -71,7 +71,7 @@ SUBMIT = Tool(
 
 def make_agent(log, provider: str, lab: str, tag: str | None = None) -> Agent:
     tools = (_water_tools() if lab == "water" else _fire_tools()) + [SUBMIT]
-    return Agent("reviewer", SYSTEM, tools, log, provider, tag=tag)
+    return Agent("reviewer", SYSTEM, tools, log, provider, max_steps=24, tag=tag)
 
 
 def task_for(study: dict, finding: dict, audit: list[dict]) -> str:

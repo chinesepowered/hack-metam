@@ -45,7 +45,7 @@ def schema(required: list[str] | None = None, **props) -> dict:
 
 class Agent:
     def __init__(self, name: str, system: str, tools: list[Tool], log: EventLog, provider: str,
-                 max_steps: int = 14, tag: str | None = None):
+                 max_steps: int = 20, tag: str | None = None):
         self.name, self.system, self.provider, self.max_steps = name, system, provider, max_steps
         self.log = _Tagged(log, tag) if tag else log  # tag = study id, so parallel agents stay readable
         self.tools = {t.name: t for t in tools}
@@ -55,7 +55,12 @@ class Agent:
         user = [{"type": "text", "text": task}] + [llm.image_part(p) for p in images]
         messages = [{"role": "system", "content": self.system}, {"role": "user", "content": user}]
         specs = [t.spec() for t in self.tools.values()]
+        terminal = " or ".join(t.name for t in self.tools.values() if t.terminal)
+        seen: dict[str, dict] = {}  # identical repeat calls get the earlier result instead of re-running
         for step in range(self.max_steps):
+            if step == self.max_steps - 3:
+                messages.append({"role": "user", "content": f"You have 3 steps left. Stop gathering; finish now by "
+                                                            f"calling {terminal} with what you have verified."})
             _cap_images(messages)
             reply = llm.chat(messages, tools=specs, provider=self.provider)
             if reply.reasoning:
@@ -66,8 +71,7 @@ class Agent:
             messages.append(reply.as_message())
 
             if not reply.tool_calls:
-                terminal = [t.name for t in self.tools.values() if t.terminal]
-                messages.append({"role": "user", "content": f"Continue with tools. Finish by calling {' or '.join(terminal)}."})
+                messages.append({"role": "user", "content": f"Continue with tools. Finish by calling {terminal}."})
                 continue
 
             visuals, finished = [], None
@@ -78,7 +82,13 @@ class Agent:
                     if tool is None:
                         raise ValueError(f"unknown tool {tc.function.name}")
                     self.log.emit(self.name, "tool_call", tool.name, args=args)
-                    result = tool.fn(args)
+                    key = tool.name + json.dumps(args, sort_keys=True)
+                    if key in seen and not tool.terminal:
+                        result = {"note": "identical to one of your earlier calls; same result"} | seen[key]
+                    else:
+                        result = tool.fn(args)
+                        seen[key] = {k: v for k, v in result.items() if k != "_images"} | (
+                            {"_images": result["_images"]} if "_images" in result else {})
                 except Exception as e:  # report failures back to the model; it can retry differently
                     result = {"error": f"{type(e).__name__}: {e}"}
                 images = result.pop("_images", [])
