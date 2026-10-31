@@ -15,7 +15,7 @@ new versioned procedure, and the labs measure again before anything is published
 fully autonomous cycle, Lake Mead's agreement with the official gauge went from r 0.27 to 0.96, and the Tartar
 Fire burn map's overlap with the official perimeter went from 0.66 to 0.90.
 
-**▶ [Watch the demo video](https://www.youtube.com/watch?v=vb0DcCscftc) ·
+**▶ [Watch the demo video](https://www.youtube.com/watch?v=hRtlc5nbNs0) ·
 [Replay a full autonomous cycle in your browser](https://orbital-x-nine.vercel.app)** (no install, no keys)
 
 <p align="center">
@@ -28,7 +28,7 @@ Fire burn map's overlap with the official perimeter went from 0.66 to 0.90.
 
 ## Results from one autonomous cycle
 
-Cycle-8, the run in the live replay above: two questions in, no human in the loop, 18 minutes end to end
+Cycle-8, the run in the demo video and the live replay: two questions in, no human in the loop, 18 minutes end to end
 (reusing satellite measurements that earlier cycles had cached).
 
 | Study | Default procedure (v1) | After the Director's fix |
