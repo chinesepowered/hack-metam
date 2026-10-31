@@ -1,7 +1,10 @@
 """Water Lab: measures surface-water extent from orbit and grades itself against gauge records."""
 from __future__ import annotations
 
+import base64
 import json
+import re
+import subprocess
 from datetime import date
 
 import numpy as np
@@ -157,6 +160,99 @@ def gate_options(target: str) -> dict | list:
     return sorted(rows, key=lambda r: (-r["pearson_r"], -r["months_kept"]))
 
 
+WATCH_PROMPT = """This video is a time-lapse of monthly Sentinel-2 images of {name}, about two seconds per month.
+Each frame's caption shows its date and the water area the instrument measured; cyan outline/fill marks the water it
+counted. Watch every frame and report the frames where the measurement looks wrong:
+- missed_water: lake water that looks black or dark but is NOT covered in cyan;
+- false_water: cyan over things that are not lake water (land, cloud, snow, shadow);
+- other: anything else that makes the frame unreliable (haze, missing coverage).
+Think briefly: do not enumerate frames that look fine. Answer with only a JSON array, one object per problem frame:
+[{{"date": "YYYY-MM-DD as printed in the caption", "area_km2": number from the caption, "problem": "missed_water|false_water|other", "note": "what you see"}}]
+Return [] if every frame looks right."""
+
+
+CHUNK = 24  # months per clip: shorter clips get more of the model's attention per frame
+
+
+def _review_video(out_dir, points, name: str):
+    """Slow time-lapse for review (2 s per month, 800 px): the model samples ~1 frame/s, so each month is seen."""
+    from orbital.imagery.render import frames_to_mp4
+    video = out_dir / "review" / f"{name}.mp4"
+    if not video.exists():
+        video.parent.mkdir(parents=True, exist_ok=True)
+        raw = frames_to_mp4([out_dir / p["evidence"] for p in points], video.with_suffix(".raw.mp4"), fps=0.5)
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(raw), "-vf", "scale=800:-2,fps=1",
+                        "-c:v", "libx264", "-crf", "28", "-pix_fmt", "yuv420p", str(video)], check=True)
+        raw.unlink()
+    return video
+
+
+def _watch_clip(video, name: str) -> tuple[list, float]:
+    from orbital import llm
+    data_url = "data:video/mp4;base64," + base64.b64encode(video.read_bytes()).decode()
+    reply = llm.chat([{"role": "user", "content": [
+        {"type": "text", "text": WATCH_PROMPT.format(name=name)},
+        {"type": "video_url", "video_url": {"url": data_url}}]}], provider="spark-open", max_tokens=16000)
+    text = reply.content
+    try:
+        return json.loads(text[text.index("["): text.rindex("]") + 1]), reply.seconds
+    except ValueError:
+        return [{"date": d, "problem": "other", "note": "unparsed"} for d in re.findall(r"\d{4}-\d{2}-\d{2}", text)], reply.seconds
+
+
+def watch_timelapse(target: str, start: str | None = None, end: str | None = None) -> dict:
+    """Skim the measured series as time-lapse video clips with Muse Spark Open (in parallel), then map what it
+    flags to real data points."""
+    from concurrent.futures import ThreadPoolExecutor
+    good = usable_points(_points(target, start, end))
+    if not good:
+        return {"error": "no measured months to watch"}
+    out_dir = series_dir(data_dir(target), sops.current("water"))
+    chunks = [good[i:i + CHUNK] for i in range(0, len(good), CHUNK)]
+    clips = [_review_video(out_dir, c, f"{c[0]['date']}_{c[-1]['date']}") for c in chunks]
+    with ThreadPoolExecutor(max_workers=len(clips)) as pool:
+        results = list(pool.map(lambda v: _watch_clip(v, WATER_TARGETS[target]["name"]), clips))
+    flagged = [f for found, _ in results for f in found]
+    seconds = max(s for _, s in results)
+    by_date = {p["date"]: p for p in good}
+    out, unmatched = [], []
+    for f in flagged:
+        try:
+            seen = date.fromisoformat(str(f.get("date", ""))[:10])
+        except ValueError:
+            unmatched.append(f)
+            continue
+        # Captions are small: allow a misread day or digit, and use the printed area to pick the right month.
+        near = [p for p in good if abs((date.fromisoformat(p["date"]) - seen).days) <= 20]
+        area = f.get("area_km2")
+        if isinstance(area, (int, float)) and near:
+            near.sort(key=lambda p: abs(p["area_km2"] - area))
+        if not near:
+            unmatched.append(f)
+            continue
+        p = near[0]
+        out.append({"matched_date": p["date"], "measured_km2": round(p["area_km2"], 1), "problem": f.get("problem"),
+                    "caption_read_as": f.get("date"), "note": str(f.get("note", ""))[:300]})
+    seen_dates, unique = set(), []
+    for f in out:  # the same month can be flagged twice (once per problem); keep one row per month and problem
+        if (f["matched_date"], f["problem"]) not in seen_dates:
+            seen_dates.add((f["matched_date"], f["problem"]))
+            unique.append(f)
+    worst = sorted(unique, key=lambda f: f["measured_km2"])[:3]  # largest undercounts first
+    return {"frames_watched": len(good), "clips": len(clips), "seconds": round(seconds, 1), "flagged": unique,
+            "unmatched": unmatched, "shown": [f["matched_date"] for f in worst],
+            "how_to_use": "the model skims the video; confirm each flagged month with view_evidence before relying on it",
+            "known_dates": len(by_date), "_images": [out_dir / by_date[f["matched_date"]]["evidence"] for f in worst]}
+
+
+def watch_tool() -> Tool:
+    return Tool("watch_timelapse",
+                "Watch the whole measured series as one time-lapse video (Muse Spark Open video understanding) and get "
+                "the months where the water outline looks wrong. Confirm flagged months with view_evidence.",
+                schema(required=["target"], target={"type": "string"}, start={"type": "string"}, end={"type": "string"}),
+                lambda a: watch_timelapse(a["target"], a.get("start"), a.get("end")))
+
+
 def evidence_paths(target: str, dates: list[str]):
     pts = {p.get("date"): p for p in _points(target)}
     base = series_dir(data_dir(target), sops.current("water"))
@@ -201,6 +297,7 @@ def make_tools() -> list[Tool]:
              "outliers, record levels.",
              schema(target={"type": "string"}, start={"type": "string"}, end={"type": "string"}),
              lambda a: ground_truth(a["target"], a.get("start"), a.get("end"))),
+        watch_tool(),
         view_tool(),
         Tool("submit_finding", "Submit the study's finding to the Director. Ends your turn.",
              schema(required=["headline", "summary", "claims", "evidence_dates", "caveats", "confidence"],

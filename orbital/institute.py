@@ -41,8 +41,8 @@ def lab_task(study: dict, revision: dict | None) -> str:
     text = (f"Study {study['id']}: {study['question']}\n"
             f"Target: {study['target']} ({t['name']}); period {study['start']} to {study['end']}; "
             f"current SOP: {sops.current('water').version}.\n"
-            "Workflow: 1) measure_water_series  2) compare_with_ground_truth (same start/end)  3) view_evidence "
-            "for the latest date, the minimum, and any outliers or points with warnings  4) submit_finding.")
+            "Workflow: 1) measure_water_series  2) compare_with_ground_truth (same start/end)  3) watch_timelapse to "
+            "skim every month  4) view_evidence for flagged months, the latest date and the minimum  5) submit_finding.")
     return text + _revision_note(revision)
 
 

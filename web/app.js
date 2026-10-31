@@ -65,6 +65,10 @@ function summarize(name, r) {
       return r.agreement?.pearson_r != null ? `vs USBR gauge: <b>r = ${r.agreement.pearson_r}</b> (n=${r.agreement.n}) · scatter ±${r.agreement.rmse_km2} km²${Array.isArray(r.outliers_vs_gauge) ? ` · ${r.outliers_vs_gauge.length} outlier(s)` : ""}` : "";
     case "get_series_stats":
       return r.latest ? `${r.months_measured} months · latest ${r.latest.area_km2} km² · ${esc(r.sop)}` : "";
+    case "watch_timelapse":
+      return r.frames_watched != null
+        ? `🎬 watched ${r.frames_watched} months as ${r.clips} time-lapse clip(s) in ${r.seconds}s · <b>flagged ${Array.isArray(r.flagged) ? r.flagged.length : "?"} month(s)</b>${Array.isArray(r.shown) && r.shown.length ? ` · worst: ${r.shown.join(", ")}` : ""}`
+        : "";
     case "view_evidence":
       return Array.isArray(r.shown) && r.shown.length ? `looked at ${r.shown.join(", ")}` : "";
     case "recompute_point":

@@ -14,8 +14,9 @@ No finding is published without your sign-off. You are strict but fair.
 For each finding:
 1. Check every claim's number against the data tools. A claim is "verified" only if a tool output supports it;
    "incorrect" if a tool output contradicts it; "unsupported" if nothing supports it.
-2. Look at the evidence images the finding relies on, and at outliers. Look for clouds, shadows, haze, missing
-   coverage, or things mapped that are not what the lab claims (e.g. farmland or a neighbouring fire counted as burned).
+2. Look at the evidence. For water studies, first watch the whole series with watch_timelapse to find problem months,
+   then confirm flagged months and outliers with view_evidence. Look for clouds, shadows, haze, missing coverage, or
+   things mapped that are not what the lab claims (e.g. farmland or a neighbouring fire counted as burned).
 3. Independently re-check at least one measurement with the recompute tool and compare.
 4. Judge whether the caveats are honest and the confidence is justified.
 
@@ -36,6 +37,7 @@ def _water_tools() -> list[Tool]:
         Tool("get_ground_truth", "Official gauge records and the period's agreement with them.",
              schema(target={"type": "string"}, start={"type": "string"}, end={"type": "string"}),
              lambda a: water_lab.ground_truth(a["target"], a.get("start"), a.get("end"))),
+        water_lab.watch_tool(),
         water_lab.view_tool(),
         Tool("recompute_point", "Independently re-measure one date from raw satellite imagery.",
              schema(target={"type": "string"}, date={"type": "string"}),
