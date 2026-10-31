@@ -362,8 +362,12 @@ function follow(ev) {
     renderSop();
     (ev.sop.lab === "fire" ? refreshFires() : refreshStudy()).then(() => selectVersion(ev.sop.version));
   } else if (s && ["finding", "review"].includes(ev.kind)) {
-    if (s.lab === "water") refreshStudy().then(() => showWater(study.versions[study.versions.length - 1]?.key));
-    else refreshFires().then(() => showFire(fireSlug(s.target)));
+    // Show the procedure in force at this point of the run, not the session's final one.
+    if (s.lab === "water") refreshStudy().then(() => selectVersion(sopNow.water));
+    else refreshFires().then(() => {
+      const slug = fireSlug(s.target);
+      showFire(slug, fires[slug]?.versions.filter((v) => v.version === sopNow.fire).pop()?.key);
+    });
   }
 }
 

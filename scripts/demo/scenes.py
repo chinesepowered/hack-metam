@@ -100,7 +100,7 @@ def scenes(session: str) -> list[dict]:
                  f"bulletin, mistakes and all."},
         {"id": "verify", "visual": "/demo/verify.html",
          "text": "Every finding passes five checks: independent methods, official ground truth, a number audit, a "
-                 "vision review of the evidence, and a fresh re-measurement from raw imagery."},
+                 "time-lapse and image review of the evidence, and a fresh re-measurement from raw imagery."},
         {"id": "close", "visual": "/demo/close.html",
          "text": "Satellite data is free, and it covers every lake and every wildfire on Earth. Orbital turns it into "
                  "verified science, around the clock, with one person and a crew of capybaras. Thanks for watching!"},
