@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from orbital import sops
 from orbital.config import ROOT, RUNS_DIR
+from orbital.studies.analysis import compare_to_elevation
 from orbital.targets import WATER_TARGETS, data_dir
 from orbital.truth.usbr import lake_mead_monthly
 
@@ -67,8 +68,12 @@ def study(target: str):
         series, grade = d / "series.json", d / "grade.json"
         if not series.exists():
             continue
-        pts = [p for p in json.loads(series.read_text()) if p.get("usable") and p.get("date")]
-        g = json.loads(grade.read_text()) if grade.exists() else {}
+        all_pts = json.loads(series.read_text())
+        pts = [p for p in all_pts if p.get("usable") and p.get("date")]
+        if grade.exists():
+            g = json.loads(grade.read_text())
+        else:  # a series measured by a lab under a fresh SOP: grade it on the fly
+            g = compare_to_elevation(all_pts, lake_mead_monthly()) if target == "lake-mead" else {}
         rel = d.relative_to(RUNS_DIR)
         versions.append({
             "key": d.name, "version": d.name.rsplit("-", 1)[0],
@@ -131,6 +136,7 @@ def sop():
 RUNS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/runs", StaticFiles(directory=RUNS_DIR), name="runs")
 app.mount("/assets", StaticFiles(directory=WEB / "assets"), name="assets")
+app.mount("/demo", StaticFiles(directory=WEB / "demo"), name="demo")
 
 
 @app.get("/")

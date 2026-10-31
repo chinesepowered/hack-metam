@@ -426,11 +426,32 @@ async function play() {
   }
 }
 
+// Scripted replay for recording the demo: the recorder plays event ranges over exact durations.
+async function manual() {
+  const r = await (await fetch(`/api/sessions/${session}/events`)).json();
+  let i = 0;
+  setStatus("live");
+  window.orbital = {
+    events: r.events,
+    showBulletin: () => $("bulletin").classList.remove("hidden"),
+    hideBulletin: () => $("bulletin").classList.add("hidden"),
+    async playTo(end, ms) {
+      const n = Math.max(1, end - i);
+      const gap = ms / n;
+      while (i < end) {
+        push(r.events[i++]);
+        await new Promise((res) => setTimeout(res, gap));
+      }
+    },
+  };
+}
+
 async function open(sid) {
   clearTimeout(pollTimer);
   session = sid;
   reset();
   if (!sid) return;
+  if (params.get("replay") === "manual") return manual();
   if (replay) return play();
   setStatus("live");
   poll();
