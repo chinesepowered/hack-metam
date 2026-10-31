@@ -241,14 +241,21 @@ let fires = {}, view = "lake-mead", fireKind = "overlay";
 const studies = {}; // study id -> study (from assign events), to know which panel an event belongs to
 const sopNow = { water: "water-sop-1", fire: "fire-sop-1" };
 
+const scoped = (url) => (session ? `${url}?session=${encodeURIComponent(session)}` : url);
+
 async function loadStudy() {
-  [study, fires] = await Promise.all([fetch("/api/study/lake-mead").then((r) => r.json()), fetch("/api/fires").then((r) => r.json())]);
+  [study, fires] = await Promise.all([fetch(scoped("/api/study/lake-mead")).then((r) => r.json()), fetch(scoped("/api/fires")).then((r) => r.json())]);
+  activeKey = null;
   showWater(study.versions[0]?.key);
 }
 
 async function refreshFires() {
-  fires = await (await fetch("/api/fires")).json();
+  fires = await (await fetch(scoped("/api/fires"))).json();
   renderSwitch();
+}
+
+async function refreshStudy() {
+  study = await (await fetch(scoped("/api/study/lake-mead"))).json();
 }
 
 const fireSlug = (target) => {
@@ -339,9 +346,9 @@ function follow(ev) {
   if (ev.kind === "sop_update") {
     sopNow[ev.sop.lab] = ev.sop.version;
     renderSop();
-    (ev.sop.lab === "fire" ? refreshFires() : Promise.resolve()).then(() => selectVersion(ev.sop.version));
+    (ev.sop.lab === "fire" ? refreshFires() : refreshStudy()).then(() => selectVersion(ev.sop.version));
   } else if (s && ["finding", "review"].includes(ev.kind)) {
-    if (s.lab === "water") showWater();
+    if (s.lab === "water") refreshStudy().then(() => showWater(study.versions[study.versions.length - 1]?.key));
     else refreshFires().then(() => showFire(fireSlug(s.target)));
   }
 }
@@ -453,6 +460,7 @@ async function open(sid) {
   clearTimeout(pollTimer);
   session = sid;
   reset();
+  await loadStudy();
   if (!sid) return;
   if (params.get("replay") === "manual") return manual();
   if (replay) return play();
@@ -462,7 +470,6 @@ async function open(sid) {
 
 async function init() {
   renderCrew(null);
-  await loadStudy();
   const list = await (await fetch("/api/sessions")).json();
   $("session").innerHTML = list.map((s) => `<option value="${s.id}">${s.id}${s.done ? "" : " (running)"}</option>`).join("");
   session = session || list[0]?.id;

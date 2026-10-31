@@ -58,13 +58,24 @@ def state(sid: str):
     return json.loads(path.read_text()) if path.exists() else {}
 
 
+def _session_keys(session: str | None, lab: str) -> list[str] | None:
+    """SOP keys a session used for a lab, in order (None = no session given: show everything)."""
+    if not session:
+        return None
+    path = _session_dir(session) / "events.jsonl"
+    events = [json.loads(x) for x in path.read_text().splitlines() if x.strip()]
+    return [s.key() for s in sops.replay(lab, events)]
+
+
 @app.get("/api/study/{target}")
-def study(target: str):
-    """Every SOP version measured for this target: points, grade, media."""
+def study(target: str, session: str | None = None):
+    """SOP versions measured for this target (only the session's, if given): points, grade, media."""
     if target not in WATER_TARGETS:
         raise HTTPException(404, "unknown target")
+    keys = _session_keys(session, "water")
+    dirs = [data_dir(target) / k for k in keys] if keys else sorted(data_dir(target).glob("water-sop-*"))
     versions = []
-    for d in sorted(data_dir(target).glob("water-sop-*")):
+    for d in dirs:
         series, grade = d / "series.json", d / "grade.json"
         if not series.exists():
             continue
@@ -90,10 +101,14 @@ def study(target: str):
 
 
 @app.get("/api/fires")
-def fires():
-    """Every fire the Fire Lab has measured, with each SOP's result."""
+def fires(session: str | None = None):
+    """Every fire the Fire Lab has measured (only the session's SOPs, if given), with each SOP's result."""
+    keys = _session_keys(session, "fire")
     out = {}
-    for result in sorted((RUNS_DIR / "fires").glob("*/*/result.json")):
+    results = sorted((RUNS_DIR / "fires").glob("*/*/result.json"))
+    if keys:
+        results = sorted((p for p in results if p.parent.name in keys), key=lambda p: keys.index(p.parent.name))
+    for result in results:
         r = json.loads(result.read_text())
         if not r.get("usable"):
             continue

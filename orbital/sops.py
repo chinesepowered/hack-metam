@@ -43,6 +43,18 @@ def issue(lab: str, changes: dict, reason: str) -> dict:
         return entry
 
 
+def replay(lab: str, events: list[dict]) -> list:
+    """The SOPs a session used for one lab, in order: the default, then each one its Director issued."""
+    sop = DEFAULTS[lab]()
+    used = [sop]
+    for e in events:
+        s = e.get("sop") if e.get("kind") == "sop_update" else e if "changes" in e else None
+        if s and s.get("lab") == lab:
+            sop = dataclasses.replace(sop, version=s["version"], **s["changes"])
+            used.append(sop)
+    return used
+
+
 def history() -> list[dict]:
     with _lock:
         return list(_history)
