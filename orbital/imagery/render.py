@@ -55,6 +55,10 @@ def caption(img: np.ndarray, text: str, sub: str | None = None) -> np.ndarray:
     size = max(14, im.width // 32)
     f, fs = _font(size), _font(int(size * 0.7))
     pad = size // 2
+    for sub_size in range(int(size * 0.7), 9, -1):  # shrink a long legend to fit the width
+        fs = _font(sub_size)
+        if not sub or d.textlength(sub, font=fs) <= im.width - 2 * pad:
+            break
     box_h = size + pad * 2 + (int(size * 0.9) if sub else 0)
     d.rectangle([0, 0, im.width, box_h], fill=(5, 12, 24, 170))
     d.text((pad, pad), text, font=f, fill=(255, 255, 255, 255))

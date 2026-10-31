@@ -102,7 +102,9 @@ def methods_study(name: str, state: str) -> dict:
     """Score every procedure variant against the official perimeter on one pre/post pair (loaded once)."""
     cache = RUNS_DIR / "fires" / fire_slug(name, state) / "methods.json"
     if cache.exists():
-        return json.loads(cache.read_text())
+        cached = json.loads(cache.read_text())
+        if {r["method"] for r in cached.get("variants", [])} == {label for label, _ in FIRE_VARIANTS}:
+            return cached  # a study scored before variants were added is recomputed
     fire = perimeter(name, state)
     chosen, _ = _select_pair(fire, FireSOP())
     if not chosen:
