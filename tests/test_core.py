@@ -51,6 +51,26 @@ def test_gates_know_their_direction():
     assert gated.measure_params() == base.measure_params()  # gates don't change what a scene measures
 
 
+def test_cropland_option_keeps_old_keys_and_masks_farmland():
+    assert FireSOP().key() == FireSOP(exclude_cropland=False).key()
+    assert FireSOP().key() != FireSOP(exclude_cropland=True).key()
+    shape = (100, 100)
+    perim = np.zeros(shape, bool)
+    perim[20:80, 20:80] = True
+    nir_post = np.full(shape, .35, np.float32)
+    nir_post[perim] = .12
+    pre = _scene(np.full(shape, .08, np.float32), np.full(shape, .35, np.float32), np.full(shape, .2, np.float32),
+                 np.full(shape, .12, np.float32), np.full(shape, 4, np.uint8))
+    post = _scene(np.full(shape, .08, np.float32), nir_post, np.full(shape, .2, np.float32),
+                  np.full(shape, .2, np.float32), np.full(shape, 4, np.uint8))
+    land = np.full(shape, 30, np.uint8)
+    land[60:80, 20:80] = 40  # fields inside the perimeter
+    with_crop = measure_burn(pre, post, perim, 5.76, FireSOP(), land)
+    no_crop = measure_burn(pre, post, perim, 5.76, FireSOP(exclude_cropland=True), land)
+    assert no_crop.burned_km2 < with_crop.burned_km2
+    assert no_crop.iou > 0.95  # scored against the perimeter's burnable part
+
+
 def test_image_cap_keeps_most_recent_images():
     img = {"type": "image_url", "image_url": {"url": "data:"}}
     messages = [{"role": "user", "content": [dict(img) for _ in range(5)]} for _ in range(3)]

@@ -19,6 +19,7 @@ from orbital.imagery.load import load_day
 from orbital.imagery.stac import group_by_day, search_scenes, tile_cloud_cover
 from orbital.instruments.burn import FireSOP, measure_burn
 from orbital.truth.fires import perimeter, split_name
+from orbital.truth.landcover import CROPLAND, classes_on
 
 MAX_TRIES = 4
 
@@ -74,24 +75,26 @@ def _select_pair(fire: dict, sop: FireSOP):
     post_start = date.fromisoformat(fire["contained"]) if fire["contained"] else date.today() - timedelta(days=sop.post_window_days)
     pre_c = _candidates(aoi, discovered - timedelta(days=sop.pre_window_days), discovered - timedelta(days=1))
     post_c = _candidates(aoi, post_start, min(date.today(), post_start + timedelta(days=sop.post_window_days)))
-    rejected = []
+    rejected, landcover = [], None
     for pre_day, pre_items in pre_c[:MAX_TRIES]:
         pre = load_day(pre_items, aoi, resolution=sop.resolution_m)
         mask = _perimeter_mask(pre, fire["geometry"])
+        if landcover is None:
+            landcover = classes_on(pre)  # same grid for every scene of this fire
         for post_day, post_items in post_c[:MAX_TRIES]:
             post = load_day(post_items, aoi, resolution=sop.resolution_m)
-            m = measure_burn(pre, post, mask, fire["official_km2"], sop)
+            m = measure_burn(pre, post, mask, fire["official_km2"], sop, landcover)
             if m.usable:
-                return (pre_day, post_day, pre, post, mask, m), rejected
+                return (pre_day, post_day, pre, post, mask, m, landcover), rejected
             rejected.append({"pre": str(pre_day), "post": str(post_day), "issues": m.issues})
     return None, rejected
 
 
 # Variants compared by the fire methods study: (label, SOP changes)
 FIRE_VARIANTS = [
-    (f"dNBR>{t}{' +offset' if off else ''}{f' within {b:g} km' if b else ''}",
-     {"dnbr_threshold": t, "phenology_offset": off, "analysis_buffer_km": b})
-    for t in (0.10, 0.27) for off in (False, True) for b in (0.0, 1.0, 3.0)
+    (f"dNBR>{t}{' +offset' if off else ''}{f' within {b:g} km' if b else ''}{' no cropland' if crop else ''}",
+     {"dnbr_threshold": t, "phenology_offset": off, "analysis_buffer_km": b, "exclude_cropland": crop})
+    for t in (0.10, 0.27) for off in (False, True) for b in (0.0, 1.0, 3.0) for crop in (False, True)
 ]
 
 
@@ -104,16 +107,18 @@ def methods_study(name: str, state: str) -> dict:
     chosen, _ = _select_pair(fire, FireSOP())
     if not chosen:
         return {"error": "no clear pre/post scene pair"}
-    pre_day, post_day, pre, post, mask, _ = chosen
+    pre_day, post_day, pre, post, mask, _, landcover = chosen
+    crop_km2 = float(((landcover == CROPLAND) & mask).sum() * pre.attrs["pixel_area_m2"] / 1e6)
     rows = []
     for label, changes in FIRE_VARIANTS:
-        m = measure_burn(pre, post, mask, fire["official_km2"], dataclasses.replace(FireSOP(), **changes))
+        m = measure_burn(pre, post, mask, fire["official_km2"], dataclasses.replace(FireSOP(), **changes), landcover)
         rows.append({"method": label, "sop_changes": changes, "iou": round(m.iou, 3), "precision": round(m.precision, 3),
                      "recall": round(m.recall, 3), "burned_km2": round(m.burned_km2, 1),
                      "outside_perimeter_km2": round(m.burned_outside_perimeter_km2, 1)})
     rows.sort(key=lambda r: -r["iou"])
     result = {"fire": f"{fire['name']}, {fire['state']}", "pre_fire_scene": str(pre_day), "post_fire_scene": str(post_day),
-              "official_km2": fire["official_km2"], "score": "IoU with the official perimeter (higher is better)",
+              "official_km2": fire["official_km2"], "cropland_inside_perimeter_km2": round(crop_km2, 1),
+              "score": "IoU with the official perimeter (its burnable part when cropland is excluded); higher is better",
               "variants": rows}
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_text(json.dumps(result, indent=1))
@@ -134,10 +139,14 @@ def run_fire(name: str, state: str, sop: FireSOP = FireSOP(), use_cache: bool = 
     if not chosen:
         return {"fire": {k: v for k, v in fire.items() if k != "geometry"}, "usable": False, "rejected": rejected}
 
-    pre_day, post_day, pre, post, mask, m = chosen
+    pre_day, post_day, pre, post, mask, m, landcover = chosen
     edge = find_boundaries(mask, mode="outer")
     post_rgb = render.true_color(post)
     overlay = render.overlay(post_rgb, m.burned, color=(255, 90, 40), alpha=0.35, outline=False)
+    legend = f"orange = burned (dNBR > {sop.dnbr_threshold}) · white = official perimeter"
+    if sop.exclude_cropland:
+        overlay = render.overlay(overlay, landcover == CROPLAND, color=(150, 160, 175), alpha=0.45, outline=False)
+        legend += " · grey = cropland (excluded)"
     overlay[edge] = (255, 255, 255)
     sev = severity_rgb(m.dnbr)
     sev[edge] = (255, 255, 255)
@@ -145,8 +154,7 @@ def run_fire(name: str, state: str, sop: FireSOP = FireSOP(), use_cache: bool = 
     pre_rgb[edge] = (255, 255, 255)
     title = f"{fire['name']} Fire ({fire['state']}) · {post_day}"
     files = {
-        "overlay": render.save_png(render.caption(render.fit(overlay, 1100), title,
-                                                  f"orange = burned (dNBR > {sop.dnbr_threshold}) · white = official perimeter"), out / "overlay.png"),
+        "overlay": render.save_png(render.caption(render.fit(overlay, 1100), title, legend), out / "overlay.png"),
         "severity": render.save_png(render.caption(render.fit(sev, 1100), f"{fire['name']} Fire · burn severity (dNBR)",
                                                    "green unburned → yellow low → orange moderate → red high"), out / "severity.png"),
         "pre": render.save_png(render.caption(render.fit(pre_rgb, 1100), f"{fire['name']} · before · {pre_day}"), out / "pre.png"),

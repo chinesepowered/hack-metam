@@ -13,6 +13,7 @@ from scipy import ndimage
 from orbital.imagery import indices
 from orbital.imagery.load import SCL_CLOUD, SCL_NODATA, SCL_WATER
 from orbital.instruments.water import iou
+from orbital.truth.landcover import CROPLAND
 
 ACRES_PER_KM2 = 247.105
 # USGS FIREMON dNBR severity classes (Key & Benson 2006)
@@ -35,10 +36,18 @@ class FireSOP:
     # 2–5 km outside the perimeter, removing seasonal drying between the two scenes (Key 2006).
     analysis_buffer_km: float = 0.0
     phenology_offset: bool = False
+    # Off by default: drop ESA WorldCover cropland from the burn map and from the perimeter's burnable area
+    # (harvest between the two scenes looks like a burn in dNBR).
+    exclude_cropland: bool = False
 
     def key(self) -> str:
-        params = {k: v for k, v in asdict(self).items() if k != "version"}
+        """Optional fields left at their defaults are excluded, so adding one never invalidates older results."""
+        params = {k: v for k, v in asdict(self).items()
+                  if k != "version" and not (k in OPTIONAL_FIELDS and v == OPTIONAL_FIELDS[k])}
         return f"{self.version}-{hashlib.sha1(json.dumps(params, sort_keys=True).encode()).hexdigest()[:6]}"
+
+
+OPTIONAL_FIELDS = {"exclude_cropland": False}
 
 
 SOP_FIELDS = {
@@ -46,6 +55,8 @@ SOP_FIELDS = {
     "analysis_buffer_km": "count burned pixels only within this distance of the official perimeter; 0 = whole scene (default 0)",
     "phenology_offset": "subtract the median dNBR of an unburned ring 2–5 km outside the perimeter (default false)",
     "max_cloud": "max cloud share over the fire area before a scene pair is rejected (default 0.03)",
+    "exclude_cropland": "drop ESA WorldCover 2021 cropland from the burn map and from the perimeter's burnable area "
+                        "(default false)",
 }
 
 
@@ -75,8 +86,14 @@ class BurnMeasurement:
 
 
 def measure_burn(pre: xr.Dataset, post: xr.Dataset, perimeter: np.ndarray, official_km2: float,
-                 sop: FireSOP = FireSOP()) -> BurnMeasurement:
+                 sop: FireSOP = FireSOP(), landcover: np.ndarray | None = None) -> BurnMeasurement:
     px_km2 = pre.attrs["pixel_area_m2"] / 1e6
+    cropland = None
+    if sop.exclude_cropland:
+        if landcover is None:
+            raise ValueError("exclude_cropland needs the land-cover map")
+        cropland = landcover == CROPLAND
+        perimeter = perimeter & ~cropland  # score against the burnable part of the official perimeter
     def bad(ds):
         s = ds.scl.values
         return np.isin(s, SCL_CLOUD) | (s == SCL_NODATA)
@@ -97,6 +114,8 @@ def measure_burn(pre: xr.Dataset, post: xr.Dataset, perimeter: np.ndarray, offic
     if sop.analysis_buffer_km > 0:
         domain = valid & (dist_m <= sop.analysis_buffer_km * 1000)
 
+    if cropland is not None:
+        domain = domain & ~cropland
     burned = (dnbr > sop.dnbr_threshold) & domain
     burned = ndimage.binary_opening(burned, iterations=1)
     labels, n = ndimage.label(burned)
