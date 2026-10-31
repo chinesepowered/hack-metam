@@ -15,7 +15,8 @@ const CAPTION_CSS = `#cap{position:fixed;left:50%;bottom:34px;transform:translat
   border-radius:14px;border:1px solid rgba(255,255,255,.12);text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.45)}`;
 
 function sentences(text) {
-  return text.match(/[^.!?]+[.!?]+/g)?.map((s) => s.trim()) || [text];
+  // Split only where punctuation is followed by a space, so "1,037.8" and "0.27" stay whole.
+  return text.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean);
 }
 
 async function captions(page, text, seconds) {
@@ -75,7 +76,7 @@ function boundaries(events) {
       }
     } else {
       inReplay = false;
-      await page.goto(base + scene.visual, { waitUntil: "networkidle" });
+      await page.goto(`${base}${scene.visual}?session=${session}`, { waitUntil: "networkidle" });
       await page.waitForTimeout(400);
       marks.push({ id: scene.id, start: (Date.now() - t0) / 1000 });
       await captions(page, scene.text, seconds);

@@ -16,11 +16,11 @@
 <div class="foot">Muse Spark Open (open weights) · Sentinel-2 open data (Copernicus) · github.com/chinesepowered/hack-metam</div>
 <script>
 const span = (a, b) => `${a}<span class="arrow">→</span><span style="color:var(--good)">${b}</span>`;
-fetch("/api/study/lake-mead").then(r => r.json()).then(s => {
+fetch("/api/study/lake-mead" + location.search).then(r => r.json()).then(s => {
   const r = s.versions.map(v => v.grade.pearson_r);
   document.getElementById("water").innerHTML = span(r[0].toFixed(2), r[r.length - 1].toFixed(2));
 });
-fetch("/api/fires").then(r => r.json()).then(f => {
+fetch("/api/fires" + location.search).then(r => r.json()).then(f => {
   const v = (f["tartar-id"] || {versions: []}).versions.filter(x => !x.key.includes("recompute"));
   if (v.length) document.getElementById("fire").innerHTML = span(v[0].measurement.iou.toFixed(2), v[v.length - 1].measurement.iou.toFixed(2));
 });

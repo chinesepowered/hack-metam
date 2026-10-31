@@ -71,34 +71,26 @@ def scenes(session: str) -> list[dict]:
                  "traces every number back to a tool. The agents run on Muse Spark Open, Meta's open-weights model."},
         {"id": "round1", "visual": "replay:r1_review",
          "text": "I asked two questions: how much has Lake Mead changed since 2018, and how big was this summer's "
-                 "Tartar Fire in Idaho? The labs measured 106 months of the lake and mapped the fire, and every "
-                 "number traced back to a tool."},
+                 "Tartar Fire in Idaho? The labs combed through 106 months of satellite images of the lake and mapped "
+                 "the fire, and every number traced back to a tool."},
         {"id": "reject", "visual": "replay:r1_decide",
          "text": f"But the Reviewer checked the satellite evidence and sent both studies back. In winter the lake "
                  f"looked almost black, so our water index missed most of it. Agreement with the gauge was just "
-                 f"{f['r1']}. And the fire map counted {f['outside1']} square kilometers of farmland as burned."},
+                 f"{f['r1']}. And the fire map counted {f['outside1']} square kilometers outside the official "
+                 f"perimeter as burned: farm fields, and hillsides across the river."},
     ]
-    if rounds >= 3 and len(fire_sops) >= 2:
-        out += [
-            {"id": "fix", "visual": "replay:r2_decide",
-             "text": f"So the Director ran a methods study and issued new procedures to both labs. The water fix worked "
-                     f"first time: agreement jumped from {f['r1']} to {f['r2']}. The fire map improved, but it still "
-                     f"missed the institute's bar."},
-            {"id": "fix2", "visual": "replay:bulletin",
-             "text": f"So the Director tightened the fire procedure again. On the third try, the burn map overlapped the "
-                     f"official perimeter at {f['iou2']}, with {f['prec2']} percent precision. Both findings passed "
-                     f"review and went into the bulletin."},
-        ]
-    else:
-        out += [
-            {"id": "fix", "visual": "replay:bulletin",
-             "text": f"So the Director ran a methods study and issued new procedures to both labs. Agreement jumped from "
-                     f"{f['r1']} to {f['r2']}, and the fire map now overlaps the official perimeter at {f['iou2']}, "
-                     f"with {f['prec2']} percent precision. Both passed review and went into the bulletin."},
-        ]
+    if rounds != 2 or len(fire_sops) != 1:
+        raise SystemExit(f"narration is written for a 2-round cycle with one fire fix; {session} had {rounds} rounds "
+                         f"and {len(fire_sops)} fire fixes: adapt scenes() before recording")
     out += [
+        {"id": "fix", "visual": "replay:r2_review",
+         "text": f"So the Director ran a methods study for each lab and issued new procedures: a dark-water rule with "
+                 f"quality gates for the lake, and a tighter search area for the fire. Then everything was measured "
+                 f"again."},
         {"id": "publish", "visual": "replay:end",
-         "text": "The bulletin even lists the mistakes we caught in our own work."},
+         "text": f"Agreement with the gauge jumped from {f['r1']} to {f['r2']}, and the burn map now overlaps the "
+                 f"official perimeter at {f['iou2']}. The Reviewer accepted both, and the Director published the "
+                 f"bulletin, mistakes and all."},
         {"id": "verify", "visual": "/demo/verify.html",
          "text": "Every finding passes five checks: independent methods, official ground truth, a number audit, a "
                  "vision review of the evidence, and a fresh re-measurement from raw imagery."},

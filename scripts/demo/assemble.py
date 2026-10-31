@@ -11,7 +11,7 @@ import wave
 from orbital.config import RUNS_DIR
 
 DEMO = RUNS_DIR / "demo"
-SHORT = ("hook", "reject", "fix", "fix2", "close")  # scenes kept in the X cut (fix2 only exists after 3 rounds)
+SHORT = ("hook", "reject", "publish", "close")  # scenes kept in the X cut
 
 
 def main():

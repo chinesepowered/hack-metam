@@ -62,18 +62,22 @@ function summarize(name, r) {
       return r.latest ? `${r.months_measured} months measured under <b>${esc(r.sop)}</b> · latest ${r.latest.date}: <b>${r.latest.area_km2} km²</b> · min ${r.minimum.area_km2} km² (${r.minimum.date})` : "";
     case "compare_with_ground_truth":
     case "get_ground_truth":
-      return r.agreement ? `vs USBR gauge: <b>r = ${r.agreement.pearson_r}</b> (n=${r.agreement.n}) · scatter ±${r.agreement.rmse_km2} km² · ${(r.outliers_vs_gauge || []).length} outlier(s)` : "";
+      return r.agreement?.pearson_r != null ? `vs USBR gauge: <b>r = ${r.agreement.pearson_r}</b> (n=${r.agreement.n}) · scatter ±${r.agreement.rmse_km2} km²${Array.isArray(r.outliers_vs_gauge) ? ` · ${r.outliers_vs_gauge.length} outlier(s)` : ""}` : "";
     case "get_series_stats":
       return r.latest ? `${r.months_measured} months · latest ${r.latest.area_km2} km² · ${esc(r.sop)}` : "";
     case "view_evidence":
-      return `looked at ${(r.shown || []).join(", ")}`;
+      return Array.isArray(r.shown) && r.shown.length ? `looked at ${r.shown.join(", ")}` : "";
     case "recompute_point":
       return r.area_km2 != null ? `re-measured ${r.date} from raw imagery: <b>${r.area_km2.toFixed(1)} km²</b>` : "";
     case "methods_study":
     case "water_methods_study":
-      return r.variants ? "ranked methods: " + r.variants.slice(0, 3).map((v) => `${esc(v.method)} r=${v.pearson_r}`).join(" · ") : "";
+      return Array.isArray(r.variants)
+        ? "ranked methods: " + r.variants.slice(0, 3).map((v) => `${esc(v.method)} r=${v.pearson_r}`).join(" · ")
+        : `compared water-detection methods and quality gates against the gauge (${r.dates_compared ?? "?"} dates)`;
     case "fire_methods_study":
-      return r.variants ? "ranked procedures: " + r.variants.slice(0, 3).map((v) => `${esc(v.method)} IoU ${v.iou}`).join(" · ") : "";
+      return Array.isArray(r.variants)
+        ? "ranked procedures: " + r.variants.slice(0, 3).map((v) => `${esc(v.method)} IoU ${v.iou}`).join(" · ")
+        : "scored burn-mapping procedures against the official perimeter";
     case "current_sop":
       return r.current ? `current SOP ${esc(r.current.version)}` : "";
     case "issue_sop":
@@ -84,7 +88,7 @@ function summarize(name, r) {
     case "recompute_burn":
       return r.burned_km2 != null ? `recomputed from raw imagery: <b>${r.burned_km2.toFixed(1)} km²</b> burned · IoU ${r.iou.toFixed(3)}` : "";
     case "list_fires":
-      return r.fires ? `${r.fires.length} large fires this year` : "";
+      return Array.isArray(r.fires) ? `${r.fires.length} large fires this year` : "";
     default:
       return "";
   }
@@ -117,7 +121,7 @@ function render(ev) {
       body = `<div class="text">💭 ${esc(ev.text.slice(0, 220))}${ev.text.length > 220 ? "…" : ""}</div>`;
       break;
     case "say":
-      body = `<div class="text">${esc(ev.text)}</div>`;
+      body = `<div class="text">${esc(ev.text.slice(0, 360))}${ev.text.length > 360 ? "…" : ""}</div>`;
       break;
     case "tool_call":
       if (QUIET_TOOLS.has(ev.text)) return null;
@@ -310,7 +314,9 @@ function showWater(key) {
   ]);
   chart(v);
   const vid = $("timelapse");
-  if (v.timelapse && !vid.src.endsWith(v.timelapse)) { vid.src = v.timelapse; vid.play().catch(() => {}); }
+  vid.classList.toggle("hidden", !v.timelapse);
+  if (!v.timelapse) vid.removeAttribute("src");
+  else if (!vid.src.endsWith(v.timelapse)) { vid.src = v.timelapse; vid.play().catch(() => {}); }
 }
 
 function showFire(slug, key) {
