@@ -57,12 +57,15 @@ class Agent:
         specs = [t.spec() for t in self.tools.values()]
         terminal = " or ".join(t.name for t in self.tools.values() if t.terminal)
         seen: dict[str, dict] = {}  # identical repeat calls get the earlier result instead of re-running
+        finish_only = [t.spec() for t in self.tools.values() if t.terminal]
         for step in range(self.max_steps):
+            closing = step >= self.max_steps - 3
             if step == self.max_steps - 3:
                 messages.append({"role": "user", "content": f"You have 3 steps left. Stop gathering; finish now by "
                                                             f"calling {terminal} with what you have verified."})
             _cap_images(messages)
-            reply = llm.chat(messages, tools=specs, provider=self.provider)
+            # Near the end, the finishing tool is the only one on offer, so an agent cannot loop past its budget.
+            reply = llm.chat(messages, tools=finish_only if closing and finish_only else specs, provider=self.provider)
             if reply.reasoning:
                 self.log.emit(self.name, "thought", reply.reasoning.strip()[:600], model=llm.model_name(self.provider),
                               seconds=round(reply.seconds, 1))

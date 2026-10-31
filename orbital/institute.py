@@ -71,13 +71,19 @@ def run_lab(study: dict, log: EventLog, provider: str, revision: dict | None) ->
 
 
 def run_review(study: dict, finding: dict, audit: list[dict], log: EventLog, provider: str) -> dict:
-    agent = reviewer.make_agent(log, provider, study["lab"], tag=study["id"])
-    log.emit("reviewer", "start", f"reviewing {study['id']}", tag=study["id"])
-    try:
-        review = agent.run(reviewer.task_for(study, finding, audit))
-    except Exception as e:
-        review = {"error": f"{type(e).__name__}: {e}"}
-    if "error" in review:  # an unfinished review can never count as approval
+    # An unfinished review is a reviewing problem, not a measurement problem: retry it once with a fresh
+    # Reviewer before anything reaches the Director. It still never counts as approval.
+    for attempt in (1, 2):
+        agent = reviewer.make_agent(log, provider, study["lab"], tag=study["id"])
+        log.emit("reviewer", "start", f"reviewing {study['id']}" + (" (fresh reviewer)" if attempt == 2 else ""),
+                 tag=study["id"])
+        try:
+            review = agent.run(reviewer.task_for(study, finding, audit))
+        except Exception as e:
+            review = {"error": f"{type(e).__name__}: {e}"}
+        if "error" not in review:
+            break
+    if "error" in review:
         review = {"verdict": "revise", "claim_checks": [], "issues": [f"review did not complete: {review['error']}"]}
     log.emit("reviewer", "review", f"{study['id']}: {review.get('verdict', 'error')}", study_id=study["id"],
              review={k: v for k, v in review.items() if not k.startswith("_")})

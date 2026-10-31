@@ -39,8 +39,17 @@ def large_fires(min_acres: float = 50000, limit: int = 15) -> list[dict]:
     return [_row(f["attributes"]) for f in r.get("features", [])]
 
 
+def split_name(name: str, state: str | None = None) -> tuple[str, str | None]:
+    """Accept 'Tartar, ID' as well as ('Tartar', 'ID')."""
+    if "," in name:
+        name, state_in_name = (s.strip() for s in name.split(",", 1))
+        state = state or state_in_name
+    return name.strip(), (state or "").strip().upper() or None
+
+
 def perimeter(name: str, state: str | None = None) -> dict:
     """The largest perimeter matching `name` (and state), with geometry in lon/lat."""
+    name, state = split_name(name, state)
     key = f"{name}-{state}".lower().replace(" ", "_")
     cache = CACHE_DIR / "fires" / f"{key}.json"
     if cache.exists():

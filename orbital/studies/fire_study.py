@@ -18,13 +18,18 @@ from orbital.imagery import render
 from orbital.imagery.load import load_day
 from orbital.imagery.stac import group_by_day, search_scenes, tile_cloud_cover
 from orbital.instruments.burn import FireSOP, measure_burn
-from orbital.truth.fires import perimeter
+from orbital.truth.fires import perimeter, split_name
 
 MAX_TRIES = 4
 
 
+def fire_slug(name: str, state: str | None) -> str:
+    name, state = split_name(name, state)
+    return f"{name.lower().replace(' ', '-')}-{(state or '').lower()}"
+
+
 def fire_dir(name: str, state: str, sop: FireSOP) -> Path:
-    return RUNS_DIR / "fires" / f"{name.lower().replace(' ', '-')}-{state.lower()}" / sop.key()
+    return RUNS_DIR / "fires" / fire_slug(name, state) / sop.key()
 
 
 def _aoi(bbox, buffer_km):
@@ -92,7 +97,7 @@ FIRE_VARIANTS = [
 
 def methods_study(name: str, state: str) -> dict:
     """Score every procedure variant against the official perimeter on one pre/post pair (loaded once)."""
-    cache = RUNS_DIR / "fires" / f"{name.lower().replace(' ', '-')}-{state.lower()}" / "methods.json"
+    cache = RUNS_DIR / "fires" / fire_slug(name, state) / "methods.json"
     if cache.exists():
         return json.loads(cache.read_text())
     fire = perimeter(name, state)
