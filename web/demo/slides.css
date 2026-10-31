@@ -1,0 +1,28 @@
+:root { --bg:#070d1a; --ink:#e8f1ff; --muted:#8aa3c2; --water:#22d3ee; --truth:#fbbf24; --good:#34d399; --fire:#fb7185; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background:
+  radial-gradient(1100px 600px at 75% -10%, rgba(34,211,238,.12), transparent 60%),
+  radial-gradient(900px 500px at -10% 110%, rgba(178,122,78,.16), transparent 60%), var(--bg);
+  color: var(--ink); font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+.center { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+h1 { font-size: 84px; margin: 10px 0 6px; letter-spacing: 1px; }
+h2 { font-size: 40px; margin: 0 0 26px; }
+.sub { color: var(--muted); font-size: 26px; }
+.crew { display: flex; gap: 22px; justify-content: center; margin-top: 34px; }
+.crew figure { margin: 0; animation: bob 2.4s ease-in-out infinite; }
+.crew figure:nth-child(2) { animation-delay: .3s } .crew figure:nth-child(3) { animation-delay: .6s }
+.crew figure:nth-child(4) { animation-delay: .9s } .crew figure:nth-child(5) { animation-delay: 1.2s }
+.crew img { width: 150px; height: 150px; }
+.crew figcaption { color: var(--muted); font-size: 18px; margin-top: 4px; }
+@keyframes bob { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-8px) } }
+.cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 18px; width: 88%; }
+.card { background: rgba(17,27,46,.85); border: 1px solid #22324f; border-radius: 18px; padding: 22px 18px; text-align: left; }
+.card .n { font-size: 15px; color: var(--water); font-weight: 700; letter-spacing: 1px; }
+.card h3 { margin: 8px 0 8px; font-size: 23px; }
+.card p { margin: 0; color: #cfe3ff; font-size: 17px; line-height: 1.45; }
+.big { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; margin-top: 30px; width: 80%; }
+.big .card { text-align: center; }
+.big .k { color: var(--muted); font-size: 20px; }
+.big .v { font-size: 46px; font-weight: 800; margin-top: 6px; }
+.big .v .arrow { color: var(--muted); font-weight: 400; margin: 0 10px; }
+.foot { position: absolute; bottom: 26px; width: 100%; text-align: center; color: var(--muted); font-size: 18px; }

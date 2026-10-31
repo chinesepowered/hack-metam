@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Orbital — mission control</title>
+  <link rel="icon" href="/assets/capy-astronaut.svg">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <img src="/assets/capy-astronaut.svg" alt="" class="logo">
+      <div>
+        <h1>Orbital</h1>
+        <p class="tagline">A one-person Earth-science institute, run by AI labs on Meta's Muse models</p>
+      </div>
+    </div>
+    <div class="controls">
+      <select id="session" aria-label="Session"></select>
+      <button id="run" class="btn">Run a new cycle</button>
+      <span id="status" class="pill idle">idle</span>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section class="panel crew">
+      <h2>The crew</h2>
+      <div id="crew"></div>
+      <h3>Error ledger <span class="sub">caught in our own work</span></h3>
+      <ul id="ledger" class="ledger"><li class="muted">Nothing caught yet.</li></ul>
+      <div class="sop" id="sop"></div>
+    </section>
+
+    <section class="panel notebook">
+      <h2>Lab notebook <span class="sub">every thought, tool call and check — live</span></h2>
+      <div id="feed" class="feed"></div>
+    </section>
+
+    <section class="panel study">
+      <div class="switch" id="switch"></div>
+      <h2 id="study-title">Lake Mead</h2>
+      <div class="tabs" id="tabs"></div>
+      <div class="stats" id="stats"></div>
+      <div id="water-view">
+        <div id="chart" class="chart"></div>
+        <div class="media"><video id="timelapse" muted loop playsinline autoplay></video></div>
+      </div>
+      <div id="fire-view" class="hidden">
+        <img id="fire-img" class="fire-img" alt="burn scar evidence">
+        <div class="thumbs fire-kinds" id="fire-kinds"></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="bulletin" class="bulletin hidden"></div>
+  <div id="tip" class="tip hidden"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

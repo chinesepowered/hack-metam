@@ -1,0 +1,49 @@
+[project]
+name = "orbital"
+version = "0.1.0"
+description = "A one-person Earth-science institute: AI labs that turn free satellite imagery into verified measurements."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "openai>=2.0",
+    "pystac-client>=0.8",
+    "odc-stac>=0.4",
+    "rasterio>=1.4",
+    "xarray>=2024.1",
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "scikit-image>=0.22",
+    "pillow>=10.0",
+    "pyproj>=3.6",
+    "shapely>=2.0",
+    "requests>=2.31",
+    "matplotlib>=3.8",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "meta-sam-parser>=0.1.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["orbital"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
+
+[project.optional-dependencies]
+# Meta's SAM 2.1 (open weights, Apache-2.0) as a local vision instrument: uv sync --extra sam
+sam = ["torch>=2.4", "torchvision>=0.19", "transformers>=4.56"]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+torchvision = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

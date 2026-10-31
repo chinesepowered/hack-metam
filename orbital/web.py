@@ -1,0 +1,179 @@
+"""Mission control: a small API over the institute's runs, plus the static front end.
+
+    uv run uvicorn orbital.web:app --port 8000
+"""
+from __future__ import annotations
+
+import json
+import threading
+import time
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from orbital import llm, sops
+from orbital.agents.events import EventLog
+from orbital.config import ROOT, RUNS_DIR
+from orbital.studies.analysis import compare_to_elevation
+from orbital.targets import WATER_TARGETS, data_dir
+from orbital.truth.usbr import lake_mead_monthly
+
+WEB = ROOT / "web"
+SESSIONS = RUNS_DIR / "sessions"
+app = FastAPI(title="Orbital mission control")
+
+
+def _session_dir(sid: str) -> Path:
+    d = (SESSIONS / sid).resolve()
+    if SESSIONS.resolve() not in d.parents or not d.is_dir():
+        raise HTTPException(404, "no such session")
+    return d
+
+
+@app.get("/api/sessions")
+def sessions():
+    out = []
+    for d in sorted(SESSIONS.glob("*"), reverse=True) if SESSIONS.exists() else []:
+        ev = d / "events.jsonl"
+        if not ev.exists():
+            continue
+        lines = ev.read_text().splitlines()
+        first, last = (json.loads(lines[i]) if lines else {} for i in (0, -1))
+        state = d / "state.json"
+        out.append({"id": d.name, "briefing": first.get("text", ""), "started": first.get("ts"),
+                    "done": state.exists() and "bulletin" in json.loads(state.read_text()),
+                    "stopped": last.get("kind") == "error" and last.get("actor") == "institute"})
+    return out
+
+
+@app.get("/api/sessions/{sid}/events")
+def events(sid: str, after: int = 0):
+    lines = (_session_dir(sid) / "events.jsonl").read_text().splitlines()
+    return {"events": [json.loads(x) for x in lines[after:] if x.strip()], "next": len(lines)}
+
+
+@app.get("/api/sessions/{sid}/state")
+def state(sid: str):
+    path = _session_dir(sid) / "state.json"
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
+def _session_keys(session: str | None, lab: str) -> list[str] | None:
+    """SOP keys a session used for a lab, in order (None = no session given: show everything)."""
+    if not session:
+        return None
+    path = _session_dir(session) / "events.jsonl"
+    events = [json.loads(x) for x in path.read_text().splitlines() if x.strip()]
+    return [s.key() for s in sops.replay(lab, events)]
+
+
+@app.get("/api/study/{target}")
+def study(target: str, session: str | None = None):
+    """SOP versions measured for this target (only the session's, if given): points, grade, media."""
+    if target not in WATER_TARGETS:
+        raise HTTPException(404, "unknown target")
+    keys = _session_keys(session, "water")
+    dirs = [data_dir(target) / k for k in keys] if keys else sorted(data_dir(target).glob("water-sop-*"))
+    versions = []
+    for d in dirs:
+        series, grade = d / "series.json", d / "grade.json"
+        if not series.exists():
+            continue
+        all_pts = json.loads(series.read_text())
+        pts = [p for p in all_pts if p.get("usable") and p.get("date")]
+        if grade.exists():
+            g = json.loads(grade.read_text())
+        else:  # a series measured by a lab under a fresh SOP: grade it on the fly
+            g = compare_to_elevation(all_pts, lake_mead_monthly()) if target == "lake-mead" else {}
+        rel = d.relative_to(RUNS_DIR)
+        versions.append({
+            "key": d.name, "version": d.name.rsplit("-", 1)[0],
+            "points": [{"date": p["date"], "area": round(p["area_km2"], 2), "lo": p["band_km2"][0],
+                        "hi": p["band_km2"][1], "evidence": f"/runs/{rel}/{p['evidence']}",
+                        "warnings": p.get("warnings", [])} for p in pts],
+            "grade": {k: g.get(k) for k in ("n", "pearson_r", "rmse_km2", "slope_km2_per_ft", "outliers")},
+            "timelapse": f"/runs/{rel}/timelapse.mp4" if (d / "timelapse.mp4").exists() else None,
+        })
+    truth = [{"date": str(d), "elev": v} for d, v in lake_mead_monthly() if d.year >= 2017] if target == "lake-mead" else []
+    methods = data_dir(target) / "methods_eval.json"
+    return {"target": target, **WATER_TARGETS[target], "versions": versions, "truth": truth,
+            "methods": json.loads(methods.read_text())["variants"] if methods.exists() else None}
+
+
+@app.get("/api/fires")
+def fires(session: str | None = None):
+    """Every fire the Fire Lab has measured (only the session's SOPs, if given), with each SOP's result."""
+    keys = _session_keys(session, "fire")
+    out = {}
+    results = sorted((RUNS_DIR / "fires").glob("*/*/result.json"))
+    if keys:
+        results = sorted((p for p in results if p.parent.name in keys), key=lambda p: keys.index(p.parent.name))
+    for result in results:
+        r = json.loads(result.read_text())
+        if not r.get("usable"):
+            continue
+        slug = result.parent.parent.name
+        entry = out.setdefault(slug, {"fire": r["fire"], "versions": []})
+        entry["versions"].append({
+            "key": result.parent.name, "version": r["sop"], "pre": r["pre_date"], "post": r["post_date"],
+            "measurement": r["measurement"],
+            "evidence": {k: f"/runs/{v}" for k, v in r["evidence"].items()},
+        })
+    return out
+
+
+class RunRequest(BaseModel):
+    briefing: str | None = None
+
+
+_running: dict[str, threading.Thread] = {}
+
+
+@app.post("/api/sessions")
+def start(req: RunRequest):
+    from orbital import institute
+
+    if any(t.is_alive() for t in _running.values()):
+        raise HTTPException(409, "a cycle is already running")
+    if not llm.available("spark-open"):
+        raise HTTPException(400, "Set BASETEN_API_KEY where this server runs: every agent runs on Muse Spark Open "
+                                 "served by Baseten.")
+    sid = time.strftime("%Y%m%d-%H%M%S")
+
+    def cycle():
+        try:
+            institute.run(briefing=req.briefing or institute.DEFAULT_BRIEFING, run_id=sid)
+        except Exception as e:  # say why in the notebook, instead of a cycle that looks to be running forever
+            EventLog(SESSIONS / sid / "events.jsonl").emit("institute", "error", f"cycle stopped: {type(e).__name__}: {e}")
+
+    t = threading.Thread(target=cycle, daemon=True)
+    t.start()
+    _running[sid] = t
+    return {"id": sid}
+
+
+@app.get("/api/sop")
+def sop():
+    return {"current": sops.current("water").__dict__, "history": sops.history()}
+
+
+RUNS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/runs", StaticFiles(directory=RUNS_DIR), name="runs")
+app.mount("/assets", StaticFiles(directory=WEB / "assets"), name="assets")
+app.mount("/demo", StaticFiles(directory=WEB / "demo"), name="demo")
+
+
+@app.get("/")
+def index():
+    return FileResponse(WEB / "index.html")
+
+
+@app.get("/{name}")
+def static_file(name: str):
+    path = (WEB / name).resolve()
+    if path.parent != WEB.resolve() or not path.is_file():
+        raise HTTPException(404)
+    return FileResponse(path)
