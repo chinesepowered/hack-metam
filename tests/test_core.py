@@ -59,10 +59,12 @@ def test_cropland_option_keeps_old_keys_and_masks_farmland():
     perim[20:80, 20:80] = True
     nir_post = np.full(shape, .35, np.float32)
     nir_post[perim] = .12
+    swir2_post = np.full(shape, .12, np.float32)  # unchanged outside the burn
+    swir2_post[perim] = .2
     pre = _scene(np.full(shape, .08, np.float32), np.full(shape, .35, np.float32), np.full(shape, .2, np.float32),
                  np.full(shape, .12, np.float32), np.full(shape, 4, np.uint8))
     post = _scene(np.full(shape, .08, np.float32), nir_post, np.full(shape, .2, np.float32),
-                  np.full(shape, .2, np.float32), np.full(shape, 4, np.uint8))
+                  swir2_post, np.full(shape, 4, np.uint8))
     land = np.full(shape, 30, np.uint8)
     land[60:80, 20:80] = 40  # fields inside the perimeter
     with_crop = measure_burn(pre, post, perim, 5.76, FireSOP(), land)
