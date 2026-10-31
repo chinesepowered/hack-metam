@@ -95,6 +95,12 @@ uv run python scripts/lake_mead.py 2
 uv run python scripts/water_methods_eval.py runs/lake-mead/water-sop-1-764ec8/series.json
 ```
 
+Tests (no network or model calls):
+
+```bash
+uv run pytest
+```
+
 Demo video pipeline: `scripts/demo/` (narration text generated from the run's outputs, AssemblyAI text-to-speech,
 Playwright screen capture, ffmpeg).
 
