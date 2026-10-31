@@ -31,7 +31,8 @@ repository was written during the hackathon; the repository started empty (see t
      post-fire scenes, graded against the official NIFC fire perimeter.
 3. **Auditor** (plain code, no model) checks that every value a lab claims appears in that lab's own tool outputs.
 4. **Reviewer** verifies each claim, *watches* the whole measured series as a satellite time-lapse (video
-   understanding), inspects every flagged frame, re-measures key numbers from raw imagery, and applies the
+   understanding), cross-checks every month with a second instrument (Meta's SAM 2.1, run locally), inspects every
+   flagged frame, re-measures key numbers from raw imagery, and applies the
    institute's publication standards (e.g. lake area must track the gauge at r ≥ 0.8; a burn map must overlap the
    perimeter at IoU ≥ 0.75).
 5. **Director** rules: publish, or fix the procedure from evidence (a methods study, a versioned SOP that every lab
@@ -83,6 +84,7 @@ A static, key-free replay of an earlier run (cycle-5): [hack-metam-static](https
 | Role | Model | How it is used |
 |---|---|---|
 | Director, labs, reviewer | **Muse Spark Open** (`meta-models/muse-spark-open-1026`, open weights, served by Baseten) | Tool calling, multi-step agent loops, vision over satellite evidence images, **video understanding** (skimming 8 years of monthly time-lapse in parallel clips to find the months an instrument got wrong), reasoning |
+| Water Lab and Reviewer's second instrument | **SAM 2.1** (`facebook/sam2.1-hiera-small`, open weights, Apache-2.0, run locally on CPU) | Outlines the lake in each month's satellite image, prompted only by points ESA WorldCover maps as permanent water; it never sees a spectral index, so it fails differently from the water index (`sam_check`) |
 | Director / reviewer, optional | Muse Wonder / Muse Spark 1.3 (Meta Model API) | Opt in with `ORBITAL_META_ROLES=1` and `MODEL_API_KEY` (see `orbital.institute.roles()`) |
 
 Structured results come back through tool calls rather than `response_format=json_schema`, which degenerates into
@@ -96,13 +98,25 @@ months (a thin false-water line, a gap in a narrow channel, cloud shadow); the R
 `view_evidence`, judged them not systematic, and the bulletin discloses them. Flags are matched to real data
 points by date and printed area, so a misread caption cannot invent a month.
 
+**A second Meta model as a second instrument.** `sam_check` runs SAM 2.1 locally (about 2 s per month on 4 CPU
+cores, cached per date) and compares its outline with the water index month by month. Measured on the stored
+series (`scripts/sam_eval.py`):
+
+| Series | Water index vs gauge | SAM 2.1 vs gauge | Months where the two disagree (outline IoU < 0.5) |
+|---|---|---|---|
+| Default SOP, 73 months | r 0.27, ±49.6 km² | r **0.92**, ±9.0 km² | exactly the three dark-water failures: 2025-02-18 (IoU 0.01), 2020-10-22 (0.17), 2021-01-30 (0.19); every other month ≥ 0.71 |
+| water-sop-3, 39 months | r 0.98, ±5.1 km² | r 0.96, ±6.5 km² | none |
+
+So SAM finds the instrument's failures without a gauge, which matters for the many lakes that have no gauge.
+
 ## Run it
 
 ```bash
-uv sync
+uv sync --extra sam
 ```
 
-Set `BASETEN_API_KEY` (required) and optionally `MODEL_API_KEY`. Then start mission control and press
+The `sam` extra adds CPU PyTorch and Transformers for SAM 2.1 (weights download once, about 180 MB); without it
+everything else works and `sam_check` reports that it is not installed. Set `BASETEN_API_KEY` (required) and optionally `MODEL_API_KEY`. Then start mission control and press
 **Run a new cycle**:
 
 ```bash
@@ -139,8 +153,8 @@ Playwright screen capture, ffmpeg).
 ```
 orbital/
   imagery/       Sentinel-2 search (Earth Search STAC), per-day mosaics, indices, rendering
-  instruments/   water extent and burn severity, with versioned SOPs
-  truth/         USBR reservoir records, NIFC fire perimeters
+  instruments/   water extent, burn severity (versioned SOPs), SAM 2.1 lake outlines
+  truth/         USBR reservoir records, NIFC fire perimeters, ESA WorldCover land cover
   studies/       month-by-month series, fire pre/post study, grading and charts
   agents/        tool-calling runtime, director, water lab, fire lab, reviewer, number audit
   institute.py   one research cycle: plan → measure → audit → review → rule → re-measure → bulletin
@@ -153,6 +167,7 @@ scripts/         baselines, methods study, mascot generator, demo video
 
 - Contains modified Copernicus Sentinel data 2018–2026 (Sentinel-2 L2A via Element 84 Earth Search on AWS Open Data).
 - U.S. Bureau of Reclamation, Lake Mead end-of-month elevations. NIFC WFIGS interagency fire perimeters.
+- ESA WorldCover 2021 (CC BY 4.0). SAM 2.1 by Meta (Apache-2.0), via Hugging Face Transformers.
 - Capy the capybara is original SVG drawn in code (`scripts/make_mascot.py`).
 - Demo narration: AssemblyAI text-to-speech.
 
@@ -162,4 +177,5 @@ scripts/         baselines, methods study, mascot generator, demo video
   pass the default gates, 39 pass the stricter gates of cycle-7's water-sop-3, only 2 of them in 2023).
 - Fire maps compare one pre-fire and one post-fire scene; perimeters include unburned islands, so burned area is
   expected to be below the official area.
-- SAM 3.1 as a third, vision-based water instrument is designed but not wired in (it needs the Meta Model API).
+- SAM 2.1 cross-checks the water instrument but is not itself an SOP option, and its outline runs about 6% wider
+  than the water index (shoreline pixels). SAM 3.1 via the Meta Model API would slot into the same tool.
