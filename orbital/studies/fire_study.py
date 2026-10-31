@@ -1,6 +1,7 @@
 """Measure one wildfire's burn scar: pick clear pre/post scenes, compute dNBR, render evidence."""
 from __future__ import annotations
 
+import dataclasses
 import json
 import math
 from datetime import date, timedelta
@@ -61,6 +62,59 @@ def severity_rgb(dnbr: np.ndarray) -> np.ndarray:
     return out.astype(np.uint8)
 
 
+def _select_pair(fire: dict, sop: FireSOP):
+    """Clearest pre-fire and post-fire scenes that pass the SOP's gates, with the perimeter on their grid."""
+    aoi = _aoi(fire["bbox"], sop.buffer_km)
+    discovered = date.fromisoformat(fire["discovered"])
+    post_start = date.fromisoformat(fire["contained"]) if fire["contained"] else date.today() - timedelta(days=sop.post_window_days)
+    pre_c = _candidates(aoi, discovered - timedelta(days=sop.pre_window_days), discovered - timedelta(days=1))
+    post_c = _candidates(aoi, post_start, min(date.today(), post_start + timedelta(days=sop.post_window_days)))
+    rejected = []
+    for pre_day, pre_items in pre_c[:MAX_TRIES]:
+        pre = load_day(pre_items, aoi, resolution=sop.resolution_m)
+        mask = _perimeter_mask(pre, fire["geometry"])
+        for post_day, post_items in post_c[:MAX_TRIES]:
+            post = load_day(post_items, aoi, resolution=sop.resolution_m)
+            m = measure_burn(pre, post, mask, fire["official_km2"], sop)
+            if m.usable:
+                return (pre_day, post_day, pre, post, mask, m), rejected
+            rejected.append({"pre": str(pre_day), "post": str(post_day), "issues": m.issues})
+    return None, rejected
+
+
+# Variants compared by the fire methods study: (label, SOP changes)
+FIRE_VARIANTS = [
+    (f"dNBR>{t}{' +offset' if off else ''}{f' within {b:g} km' if b else ''}",
+     {"dnbr_threshold": t, "phenology_offset": off, "analysis_buffer_km": b})
+    for t in (0.10, 0.27) for off in (False, True) for b in (0.0, 1.0, 3.0)
+]
+
+
+def methods_study(name: str, state: str) -> dict:
+    """Score every procedure variant against the official perimeter on one pre/post pair (loaded once)."""
+    cache = RUNS_DIR / "fires" / f"{name.lower().replace(' ', '-')}-{state.lower()}" / "methods.json"
+    if cache.exists():
+        return json.loads(cache.read_text())
+    fire = perimeter(name, state)
+    chosen, _ = _select_pair(fire, FireSOP())
+    if not chosen:
+        return {"error": "no clear pre/post scene pair"}
+    pre_day, post_day, pre, post, mask, _ = chosen
+    rows = []
+    for label, changes in FIRE_VARIANTS:
+        m = measure_burn(pre, post, mask, fire["official_km2"], dataclasses.replace(FireSOP(), **changes))
+        rows.append({"method": label, "sop_changes": changes, "iou": round(m.iou, 3), "precision": round(m.precision, 3),
+                     "recall": round(m.recall, 3), "burned_km2": round(m.burned_km2, 1),
+                     "outside_perimeter_km2": round(m.burned_outside_perimeter_km2, 1)})
+    rows.sort(key=lambda r: -r["iou"])
+    result = {"fire": f"{fire['name']}, {fire['state']}", "pre_fire_scene": str(pre_day), "post_fire_scene": str(post_day),
+              "official_km2": fire["official_km2"], "score": "IoU with the official perimeter (higher is better)",
+              "variants": rows}
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(json.dumps(result, indent=1))
+    return result
+
+
 def run_fire(name: str, state: str, sop: FireSOP = FireSOP(), use_cache: bool = True) -> dict:
     out = fire_dir(name, state, sop)
     cache = out / "result.json"
@@ -71,25 +125,7 @@ def run_fire(name: str, state: str, sop: FireSOP = FireSOP(), use_cache: bool = 
         out.mkdir(parents=True, exist_ok=True)
         cache = out / "result.json"
     fire = perimeter(name, state)
-    aoi = _aoi(fire["bbox"], sop.buffer_km)
-    discovered = date.fromisoformat(fire["discovered"])
-    post_start = date.fromisoformat(fire["contained"]) if fire["contained"] else date.today() - timedelta(days=sop.post_window_days)
-    pre_c = _candidates(aoi, discovered - timedelta(days=sop.pre_window_days), discovered - timedelta(days=1))
-    post_c = _candidates(aoi, post_start, min(date.today(), post_start + timedelta(days=sop.post_window_days)))
-
-    rejected, chosen = [], None
-    for pre_day, pre_items in pre_c[:MAX_TRIES]:
-        pre = load_day(pre_items, aoi, resolution=sop.resolution_m)
-        mask = _perimeter_mask(pre, fire["geometry"])
-        for post_day, post_items in post_c[:MAX_TRIES]:
-            post = load_day(post_items, aoi, resolution=sop.resolution_m)
-            m = measure_burn(pre, post, mask, fire["official_km2"], sop)
-            if m.usable:
-                chosen = (pre_day, post_day, pre, post, mask, m)
-                break
-            rejected.append({"pre": str(pre_day), "post": str(post_day), "issues": m.issues})
-        if chosen:
-            break
+    chosen, rejected = _select_pair(fire, sop)
     if not chosen:
         return {"fire": {k: v for k, v in fire.items() if k != "geometry"}, "usable": False, "rejected": rejected}
 

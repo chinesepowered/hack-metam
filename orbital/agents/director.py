@@ -6,6 +6,7 @@ import json
 from orbital import sops
 from orbital.agents import water_lab
 from orbital.agents.runtime import Agent, Tool, schema
+from orbital.studies.fire_study import methods_study as fire_methods
 from orbital.targets import WATER_TARGETS
 
 SYSTEM = """You are the Director of Orbital, a one-person Earth-science institute run entirely by AI labs.
@@ -99,8 +100,11 @@ def decide(log, provider: str, packets: list[dict]) -> dict:
         return entry
 
     tools = [
-        Tool("methods_study", "Water Lab only: compare water-detection methods against the gauge; shows which SOP "
-             "change reproduces each.", schema(target={"type": "string"}), lambda a: water_lab.methods_study(a["target"])),
+        Tool("water_methods_study", "Compare water-detection methods against the gauge; shows which SOP change "
+             "reproduces each.", schema(target={"type": "string"}), lambda a: water_lab.methods_study(a["target"])),
+        Tool("fire_methods_study", "Score burn-mapping procedure variants against a fire's official perimeter; "
+             "shows the SOP changes for each.", schema(fire={"type": "string"}, state={"type": "string"}),
+             lambda a: fire_methods(a["fire"], a["state"])),
         Tool("current_sop", "A lab's current SOP and every field you may change.",
              schema(lab={"type": "string", "enum": list(LABS)}),
              lambda a: {"current": sops.current(a["lab"]).__dict__, "fields": sops.FIELDS[a["lab"]],
@@ -120,8 +124,9 @@ def decide(log, provider: str, packets: list[dict]) -> dict:
              for p in packets]
     task = ("Rule on each study below: publish it, or send it back. Publish only if the reviewer accepted it.\n"
             "Labs always measure with their lab's current SOP and cannot change it themselves. If a review points "
-            "to a measurement problem, use current_sop (and methods_study for water), issue an evidence-based SOP "
-            "change for that lab, then send the study back to be re-measured under it.\n\n"
+            "to a measurement problem, use current_sop and the lab's methods study (water_methods_study or "
+            "fire_methods_study), issue an evidence-based SOP change for that lab, then send the study back to be "
+            "re-measured under it. If a review asks for quality gates the SOP offers, set those fields.\n\n"
             + json.dumps(brief, indent=1, default=str))
     _agent(log, provider, tools).run(task)
     return out

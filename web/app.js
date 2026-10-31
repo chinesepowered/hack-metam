@@ -70,7 +70,10 @@ function summarize(name, r) {
     case "recompute_point":
       return r.area_km2 != null ? `re-measured ${r.date} from raw imagery: <b>${r.area_km2.toFixed(1)} km²</b>` : "";
     case "methods_study":
+    case "water_methods_study":
       return r.variants ? "ranked methods: " + r.variants.slice(0, 3).map((v) => `${esc(v.method)} r=${v.pearson_r}`).join(" · ") : "";
+    case "fire_methods_study":
+      return r.variants ? "ranked procedures: " + r.variants.slice(0, 3).map((v) => `${esc(v.method)} IoU ${v.iou}`).join(" · ") : "";
     case "current_sop":
       return r.current ? `current SOP ${esc(r.current.version)}` : "";
     case "issue_sop":
