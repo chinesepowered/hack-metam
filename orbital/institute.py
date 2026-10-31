@@ -94,7 +94,7 @@ def ledger_entries(study: dict, rnd: int, audit: list[dict], review: dict) -> li
     return out
 
 
-def run(briefing: str = DEFAULT_BRIEFING, max_rounds: int = 3, run_id: str | None = None) -> Path:
+def run(briefing: str = DEFAULT_BRIEFING, max_rounds: int = 4, run_id: str | None = None) -> Path:
     run_id = run_id or time.strftime("%Y%m%d-%H%M%S")
     run_dir = RUNS_DIR / "sessions" / run_id
     log = EventLog(run_dir / "events.jsonl")

@@ -67,7 +67,8 @@ def plan(log, provider: str, briefing: str) -> list[dict]:
 def decide(log, provider: str, packets: list[dict]) -> dict:
     """packets: [{study, finding, audit, review}] → {publish: {id: note}, send_back: {id: instructions}, sop: [...]}"""
     out = {"publish": {}, "send_back": {}, "sop": []}
-    ids = {p["study"]["id"] for p in packets}
+    studies = {p["study"]["id"]: p["study"] for p in packets}
+    ids = set(studies)
 
     def check(sid):
         if sid not in ids:
@@ -81,6 +82,12 @@ def decide(log, provider: str, packets: list[dict]) -> dict:
 
     def send_back(a):
         check(a["study_id"])
+        lab = studies[a["study_id"]]["lab"]
+        if not any(e["lab"] == lab for e in out["sop"]):
+            # Labs measure with the current SOP only; resending under the same procedure repeats the result.
+            return {"error": f"The {lab} lab's procedure is unchanged ({sops.current(lab).version}), so re-measuring "
+                             f"would reproduce the same result. Issue an SOP for the {lab} lab first (fields: "
+                             f"{list(sops.FIELDS[lab])}), then send the study back."}
         out["send_back"][a["study_id"]] = a["instructions"]
         log.emit("director", "send_back", f"{a['study_id']} sent back: {a['instructions']}")
         return {"ok": True}
@@ -112,8 +119,9 @@ def decide(log, provider: str, packets: list[dict]) -> dict:
               "number_audit": p["audit"], "review": {k: v for k, v in p["review"].items() if not k.startswith("_")}}
              for p in packets]
     task = ("Rule on each study below: publish it, or send it back. Publish only if the reviewer accepted it.\n"
-            "If a review points to a systematic measurement problem, use methods_study and current_sop, issue an "
-            "evidence-based SOP change, then send the study back to be re-measured under it.\n\n"
+            "Labs always measure with their lab's current SOP and cannot change it themselves. If a review points "
+            "to a measurement problem, use current_sop (and methods_study for water), issue an evidence-based SOP "
+            "change for that lab, then send the study back to be re-measured under it.\n\n"
             + json.dumps(brief, indent=1, default=str))
     _agent(log, provider, tools).run(task)
     return out
