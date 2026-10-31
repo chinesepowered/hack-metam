@@ -37,24 +37,34 @@ repository was written during the hackathon; the repository started empty (see t
    follows) and send the study back.
 6. A **bulletin** is published with the findings and an error ledger of what the institute caught in its own work.
 
-## Results
+## Results (cycle-5, a full autonomous run)
 
-Measured by the labs on real data. Under SOP v1 both studies failed review; the Director's SOP v2 fixed them.
+Measured by the labs on real data. Under SOP v1 the Reviewer sent both studies back; the Director ran a methods
+study for each lab, issued SOP v2, and both re-measured studies passed review in round 2.
 
-| Study | SOP v1 | SOP v2 |
+| Study | SOP v1 | SOP v2 (issued by the Director) |
 |---|---|---|
-| Lake Mead surface area vs USBR gauge (73 months, 2018–2026) | Pearson r **0.27**, scatter ±49.6 km² | Pearson r **0.96**, scatter ±7.0 km² |
-| Tartar Fire (Idaho, 2026) burn map vs official perimeter | IoU **0.66**, precision 0.69 | IoU **0.80**, precision 0.97 |
+| Lake Mead surface area vs USBR gauge, 2018–2026 | Pearson r **0.27**, scatter ±49.6 km² (73 months) | Pearson r **0.99**, scatter ±2.9 km² (30 months) |
+| Tartar Fire (Idaho, 2026) burn map vs official perimeter | IoU **0.66**, precision 0.69, 267 km² outside | IoU **0.89**, precision 0.96, 26 km² outside |
 
 - **What went wrong in v1, water:** in low-sun winter scenes the atmospheric correction drives Lake Mead's
   reflectance to near zero in every band. The water index turns to noise and most of the lake is missed
-  (5.6 km² measured on 2025-02-18). The labs' own evidence images show the lake rendered black. The methods study
-  (`scripts/water_methods_eval.py`) showed a dark-water rule restores agreement with the gauge.
-- **What went wrong in v1, fire:** crop harvest, seasonal drying and a neighbouring burn were mapped as burned,
-  267 km² outside the perimeter. SOP v2 limits counting to the incident's surroundings and subtracts the seasonal
-  background measured in an unburned ring around the fire (the dNBR offset method).
+  (5.6 km² measured on 2025-02-18); the evidence images show the lake rendered black. The water methods study showed
+  a dark-water rule restores agreement with the gauge, and its quality-gate table showed what stricter scene
+  selection costs in months and gains in agreement. The Director chose the dark-water rule plus two gates (at most
+  half the lake near-black; the outline must overlap ESA's own water classification at IoU ≥ 0.8). The trade-off is
+  honest and stated in the bulletin: 30 of 106 months pass, with sparse coverage in 2022–2023.
+- **What went wrong in v1, fire:** crop harvest, seasonal drying and land across the Snake River were mapped as
+  burned. The fire methods study scored 12 procedure variants against the perimeter in seconds; counting only
+  within 1 km of the incident's perimeter scored best (IoU 0.89, 97% of the official area mapped as burned).
 - **Context the Water Lab reported:** USBR's end-of-month record shows Lake Mead at 1,037.8 ft on 2026-09-30,
   its lowest since 1940, below the July 2022 low of 1,040.92 ft.
+- **Earlier cycles** each exposed a flaw that is now fixed in the code: a reviewer that ran out of steps, a
+  Director that sent work back without changing the procedure (now refused by a guard), a quality gate that
+  measured the wrong thing, and a stale settings file that crashed re-measurement (the lab reported the failure
+  instead of inventing numbers).
+
+A static, key-free replay of cycle-5: [hack-metam-static](https://github.com/chinesepowered/hack-metam-static).
 
 ## Meta models
 
@@ -128,8 +138,8 @@ scripts/         baselines, methods study, mascot generator, demo video
 
 ## Limitations
 
-- Lake areas are measured at 40 m; months whose shoreline is cloudy are rejected rather than guessed (73 of 106
-  months pass the quality gates).
+- Lake areas are measured at 40 m; scenes that fail quality gates are rejected rather than guessed (73 of 106 months
+  pass the default gates, 30 pass the strict gates of cycle-5's SOP v2).
 - Fire maps compare one pre-fire and one post-fire scene; perimeters include unburned islands, so burned area is
   expected to be below the official area.
 - SAM 3.1 as a third, vision-based water instrument is designed but not wired in (it needs the Meta Model API).
