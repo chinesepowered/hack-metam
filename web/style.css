@@ -49,6 +49,7 @@ select, .btn {
 .btn:disabled { opacity: 0.5; cursor: default; }
 .pill { font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
 .pill.live { color: #04121a; background: var(--water); border-color: var(--water); }
+.pill.replay { color: #04121a; background: #fbbf24; border-color: #fbbf24; }
 .pill.done { color: #04121a; background: var(--good); border-color: var(--good); }
 
 .grid {

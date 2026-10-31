@@ -436,7 +436,7 @@ function chart(v) {
 // ---------- session plumbing ----------
 function setStatus(s) {
   $("status").className = `pill ${s}`;
-  $("status").textContent = s === "live" ? "● live" : s;
+  $("status").textContent = { live: "● live", replay: "▶ replay" }[s] || s;
 }
 
 function reset() {
@@ -458,7 +458,7 @@ async function poll() {
 
 async function play() {
   const r = await (await fetch(`/api/sessions/${session}/events`)).json();
-  setStatus("live");
+  setStatus("replay");  // a recorded cycle played back, never shown as live
   let prev = r.events[0]?.ts || 0;
   for (const ev of r.events) {
     const gap = Math.min(2600, Math.max(140, ((ev.ts - prev) * 1000) / speed));
@@ -472,7 +472,7 @@ async function play() {
 async function manual() {
   const r = await (await fetch(`/api/sessions/${session}/events`)).json();
   let i = 0;
-  setStatus("live");
+  setStatus("replay");
   window.orbital = {
     events: r.events,
     showBulletin: () => $("bulletin").classList.remove("hidden"),

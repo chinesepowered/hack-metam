@@ -16,8 +16,8 @@ from PIL import Image
 from orbital import web
 from orbital.config import ROOT, RUNS_DIR
 
-BANNER = ("Live runs are paused: we've used up today's model quota, so this page replays a real research cycle "
-          "recorded on {date}. Every event, image and number below came from that run.")
+BANNER = ("This page replays a real research cycle recorded on {date}: every event, image and number below came from "
+          "that run. To run a live cycle, start mission control from the repository.")
 
 SHIM = """// Static replay: serve the recorded session from files instead of the live API.
 (function () {
@@ -31,7 +31,7 @@ SHIM = """// Static replay: serve the recorded session from files instead of the
   window.fetch = (input, init = {}) => {
     const url = new URL(typeof input === "string" ? input : input.url, location.href);
     if ((init.method || "GET") !== "GET" && url.pathname.startsWith("/api/")) {
-      return Promise.resolve(new Response(JSON.stringify({ error: "live runs are paused in this replay" }), { status: 409 }));
+      return Promise.resolve(new Response(JSON.stringify({ detail: "this page is a replay" }), { status: 409 }));
     }
     const hit = files.find(([re]) => re.test(url.pathname));
     return real(hit ? hit[1] : input, init);
@@ -46,8 +46,8 @@ SHIM = """// Static replay: serve the recorded session from files instead of the
   document.addEventListener("DOMContentLoaded", () => {
     const run = document.getElementById("run");
     run.disabled = true;
-    run.title = "Live runs are paused (model quota). This page is a replay.";
-    run.textContent = "Live runs paused";
+    run.title = "This page is a replay; live cycles run from the repository.";
+    run.textContent = "Replay only";
     const bar = document.createElement("div");
     bar.className = "replay-note";
     bar.innerHTML = `%BANNER% <a href="?session=%SESSION%&replay=1&speed=12">Replay again</a>`;
